@@ -4,7 +4,7 @@ CHUGIN_NAME=Place
 
 # all of the c/cpp files that compose this chugin
 C_MODULES=
-CXX_MODULES=Place.cpp
+CXX_MODULES=msetup.cpp Place.cpp
 
 # where the chuck headers are
 CK_SRC_PATH?=../chuck/include/
