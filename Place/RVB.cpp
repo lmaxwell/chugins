@@ -2,14 +2,9 @@
 // 			summed first and second generation reflections from a global array.
 
 #include "RVB.h"
-#include "common.h"
-#include <rtdefs.h>
-#include <ugens.h>
-#include <string.h>
-#include <stdio.h>
-#ifndef MAXMSP
-#include <pthread.h>
-#endif
+//#include <string.h>
+//#include <stdio.h>
+//#include <pthread.h>
 #include "msetup.h"
 
 //#define debug
@@ -31,22 +26,18 @@
 
 static inline void PrintInput(float *sig, int len)
 {
-    for (int i = 0; i < len; i++)
-	    if (sig[i] != 0.0)
-		    printf("sig[%d] = %f\n", i, sig[i]);
-	printf("\n");
+  for (int i = 0; i < len; i++)
+    if (sig[i] != 0.0)
+      printf("sig[%d] = %f\n", i, sig[i]);
+  printf("\n");
 }
 
 static inline void PrintSig(double *sig, int len, double threshold = 0.0)
 {
-    for (int i = 0; i < len; i++)
-	    if (sig[i] > threshold || sig[i] < -threshold)
-		    printf("sig[%d] = %f\n", i, sig[i]);
-	printf("\n");
-}
-
-extern "C" {
-   #include <cmixfuns.h>
+  for (int i = 0; i < len; i++)
+    if (sig[i] > threshold || sig[i] < -threshold)
+      printf("sig[%d] = %f\n", i, sig[i]);
+  printf("\n");
 }
 
 int RVB::primes[NPRIMES + 2];
@@ -56,23 +47,18 @@ AtomicInt RVB::primes_gotten = -1;
 Instrument *makeRVB()
 {
    RVB *inst;
-
    inst = new RVB();
-   inst->set_bus_config("RVB");
-
    return inst;
 }
 
 RVB::RVB()
 {
-	in = NULL;
-	_branch = 0;
-    for (int i = 0; i < 2; i++) {
-       int j;
-       for (j = 0; j < 6; j++)
-          m_rvbData[i][j].Rvb_del = NULL;
-	}
-    get_primes(NPRIMES, primes);        /* load array with prime numbers */
+  for (int i = 0; i < 2; i++) {
+    int j;
+    for (j = 0; j < 6; j++)
+      m_rvbData[i][j].Rvb_del = NULL;
+  }
+  get_primes(NPRIMES, primes);        /* load array with prime numbers */
 }
 
 RVB::~RVB()
@@ -505,26 +491,22 @@ RVB::get_primes(int x, int p[])
 {
    int val = 5, index = 2;
 
-#ifndef MAXMSP
-	if (primes_gotten.incrementAndTest())
-#else
-	if (++primes_gotten == 0)
-#endif
-	{
-	/* first 2 vals initialized */
-	p[0] = 2;
-	p[1] = 3;
-
-	while (index < x) {
-	   int flag = 1;
-	   for (int i = 1; flag && val / p[i] >= p[i]; ++i)
-              if (val % p[i] == 0)
-        	 flag = 0;
-	   if (flag) {
-              p[index] = val;
-              ++index;
-	   }
-	   val += 2;
-	}
-    }
+   if (primes_gotten.incrementAndTest())
+     {
+       /* first 2 vals initialized */
+       p[0] = 2;
+       p[1] = 3;
+       
+       while (index < x) {
+	 int flag = 1;
+	 for (int i = 1; flag && val / p[i] >= p[i]; ++i)
+	   if (val % p[i] == 0)
+	     flag = 0;
+	 if (flag) {
+	   p[index] = val;
+	   ++index;
+	 }
+	 val += 2;
+       }
+     }
 }

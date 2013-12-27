@@ -4,13 +4,13 @@
 #ifndef _RTCMIX_RVB_H_
 #define _RTCMIX_RVB_H_
 
-#include <Instrument.h>
+//#include <Instrument.h>
 
 #define NCOEFFS   512
 #define NPRIMES   5000
 #define MAX_INPUTS  4
 
-class RVB : public Instrument {
+class RVB {
 public:
 	RVB();
 	virtual ~RVB();
