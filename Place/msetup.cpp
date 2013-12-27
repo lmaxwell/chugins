@@ -147,23 +147,17 @@ get_setup_params(double Dimensions[],       /* array of 5 elements */
 double
 m_set_attenuation_params(float p[], int n_args)
 {
-   if (n_args != 3) {
-      die("set_attenuation_params",
-	  	  "Usage: set_attenuation_params(min_dist, max_dist, dist_exponent)");
-	  return -1;
-   }
-   if (p[0] < 0.1) {
-      die("set_attenuation_params", "min distance must be > 0.1");
-	  return -1;
-   }
-   if (p[1] < p[0] || p[1] > 300.0) {
-      die("set_attenuation_params", "max distance must be >= min and < 300.0");
-	  return -1;
-   }
-   if (p[2] < 0) {
-      die("set_attenuation_params", "exponent must be >= 0");
-	  return -1;
-   }
+   if (p[0] < 0.1)
+     {
+       p[0] = 0.1;
+     }
+   
+   p[1] = CLIP(p[1], p[0], 300.0);
+
+   if (p[2] < 0)
+     {
+       p[2] = 0;
+     }
    g_AttenParams.minDistance = p[0];
    g_AttenParams.maxDistance = p[1];
    g_AttenParams.distanceExponent = p[2];
@@ -185,16 +179,17 @@ m_set_attenuation_params(float p[], int n_args)
 double
 m_space(float p[], int n_args)
 {
-	if (space_called) {
-      die("space", "'space' can only be called once");
-	  return -1;
+  /*
+  if (space_called) {
+    die("space", "'space' can only be called once");
+    return -1;
 	}
    if (n_args < 7) {
       die("space",
 	  	  "Usage: space(front, right, -back, -left, ceiling, absorb, rvbtime)");
 	  return -1;
    }
-
+  */
    _front = p[0];
    _right = p[1];
    _back = p[2];
@@ -202,8 +197,8 @@ m_space(float p[], int n_args)
    _ceiling = p[4];
 
    if (_back >= 0.0 || _left >= 0.0) {
-      die("space", "'back' and 'left' wall coords must be negative");
-	  return -1;
+     //die("space", "'back' and 'left' wall coords must be negative");
+     //return -1;
    }
 
    _abs_factor = p[5];
@@ -227,8 +222,7 @@ m_mikes(float p[], int n_args)
 {
    _MikeAngle = p[0] * PI / 180.0;  /* convert to rads */
    _MikePatternFactor = (p[1] <= 1.0) ? p[1] : 1.0;
-   rtcmix_advise("mikes", "Microphone angles: %.1f degrees, Pattern factor: %.1f",
-          p[0], _MikePatternFactor);
+   //rtcmix_advise("mikes", "Microphone angles: %.1f degrees, Pattern factor: %.1f", p[0], _MikePatternFactor);
    _UseMikes = 1;
 
    return 0.0;
@@ -241,7 +235,7 @@ m_mikes(float p[], int n_args)
 double
 m_mikes_off(float p[], int n_args)
 {
-   rtcmix_advise("mikes", "Microphone usage turned off.\n");
+  //rtcmix_advise("mikes", "Microphone usage turned off.\n");
    _UseMikes = 0;
 
    return 0.0;
@@ -274,7 +268,7 @@ m_oldmatrix(float p[], int n_args)
             _Matrix[i][j] = val * amp;
          }
       }
-      rtcmix_advise("matrix", "Matrix loaded.\n");
+      //rtcmix_advise("matrix", "Matrix loaded.\n");
       matrix_flag = 1;
    }
    else
@@ -295,12 +289,12 @@ m_matrix(float p[], int n_args)
 	  if (n_args == 1)
 	  {
 	   	_Matrix_Gain = amp;
-		rtcmix_advise("matrix", "Default matrix.  Gain set to %g", amp);
+		//rtcmix_advise("matrix", "Default matrix.  Gain set to %g", amp);
 		return 0;
 	  }
    	  else if (n_args != 145)
 	  {
-	  	rtcmix_warn("matrix", "Incorrect number of args.  Ignoring matrix.");
+	    //rtcmix_warn("matrix", "Incorrect number of args.  Ignoring matrix.");
 		return 0;
 	  }
       /* loop for 12 by 12 args */
@@ -309,7 +303,7 @@ m_matrix(float p[], int n_args)
             _Matrix[i][j] = p[12*i+j+1] * amp;
          }
       }
-      rtcmix_advise("matrix", "Loaded 12x12 values.\n");
+      //rtcmix_advise("matrix", "Loaded 12x12 values.\n");
       matrix_flag = 1;
    }
    else
