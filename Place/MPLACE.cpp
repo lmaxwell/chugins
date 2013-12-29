@@ -23,7 +23,7 @@
 #endif
 
 
-extern int g_Nterms[13];                 /* defined in ../MOVE/common.C */
+//extern int g_Nterms[13];                 /* defined in ../MOVE/common.C */
 
 /* ---------------------------------------------------------------- PLACE --- */
 PLACE::PLACE()
