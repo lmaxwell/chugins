@@ -496,7 +496,7 @@ CK_DLL_QUERY( Spectacle )
   QUERY->add_dtor(QUERY, spectacle_dtor);
   
   // for UGen's only: add tick function
-  QUERY->add_ugen_funcf(QUERY, spectacle_tick, NULL, 8, 8);
+  QUERY->add_ugen_funcf(QUERY, spectacle_tick, NULL, 2, 2);
   
   // NOTE: if this is to be a UGen with more than 1 channel, 
   // e.g., a multichannel UGen -- will need to use add_ugen_funcf()
