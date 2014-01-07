@@ -20,6 +20,8 @@ List of New Chugins
   - STK instrument that simulates a rectilinear, 2-dimensional digital waveguide mesh structure. Basically sounds like striking a metal plate.
 - **Spectacle**
   - FFT-based spectral delay and EQ
+- **Elliptic**
+  - Elliptic filter, capable of very steep slopes or interesting harmonic ripples
 
 Chugins That I Am Working On
 --
