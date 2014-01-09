@@ -1,4 +1,4 @@
-"/home/jwmatthys/Software/chugins/Ladspa/filtera.so" => string plugname;
+"./filter.so" => string plugname;
 if (me.args()) me.arg(0) => plugname;
 Noise n => Ladspa plugin => dac;
 <<< 0.494 => plugin.param >>>;
