@@ -3,9 +3,9 @@
 CHUGIN_NAME=Ladspa
 
 # all of the c/cpp files that compose this chugin
-C_MODULES=
+C_MODULES=load.c search.c default.c
 CXX_MODULES=Ladspa.cpp
-
+LIBS=-ldl -lm
 # where the chuck headers are
 CK_SRC_PATH?=../chuck/include/
 
@@ -88,17 +88,17 @@ all: $(CHUG)
 
 $(CHUG): $(C_OBJECTS) $(CXX_OBJECTS)
 ifeq ($(CK_CHUGIN_STATIC),0)
-	$(LD) $(LDFLAGS) -o $@ $^
+	$(LD) $(LDFLAGS) -o $@ $^ $(LIBS)
 else
 	ar rv $@ $^
 	ranlib $@
 endif
 
 $(C_OBJECTS): %.o: %.c
-	$(CC) $(FLAGS) -c -o $@ $<
+	$(CC) $(FLAGS) -c -o $@ $< $(LIBS)
 
 $(CXX_OBJECTS): %.o: %.cpp $(CK_SRC_PATH)/chuck_dl.h
-	$(CXX) $(FLAGS) -c -o $@ $<
+	$(CXX) $(FLAGS) -c -o $@ $< $(LIBS)
 
 install: $(CHUG)
 	mkdir -p $(CHUGIN_PATH)

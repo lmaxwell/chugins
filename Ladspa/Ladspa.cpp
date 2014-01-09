@@ -6,10 +6,13 @@
 // this should align with the correct versions of these ChucK files
 #include "chuck_dl.h"
 #include "chuck_def.h"
+#include "ladspa.h"
+#include "utils.h"
 
 // general includes
 #include <stdio.h>
 #include <limits.h>
+#include <dlfcn.h>
 
 // declaration of chugin constructor
 CK_DLL_CTOR(ladspa_ctor);
@@ -20,8 +23,13 @@ CK_DLL_DTOR(ladspa_dtor);
 CK_DLL_MFUN(ladspa_setParam);
 CK_DLL_MFUN(ladspa_getParam);
 
+CK_DLL_MFUN(ladspa_printLabel);
+
 // for Chugins extending UGen, this is mono synthesis function for 1 sample
 CK_DLL_TICK(ladspa_tick);
+
+extern void * loadLADSPAPluginLibrary(const char * pcPluginFilename);
+extern void * dlopenLADSPA(const char * pcFilename, int iFlag);
 
 // this is a special offset reserved for Chugin internal data
 t_CKINT ladspa_data_offset = 0;
@@ -53,12 +61,45 @@ public:
         return p;
     }
 
-    // get parameter example
-    float getParam() { return m_param; }
+  void printLabel ( Chuck_String * p)
+  {
+	const char * pcPluginFilename = p->str.c_str();
+	printf("Received %s\n", pcPluginFilename);
+	pvPluginHandle = dlopen(pcPluginFilename, RTLD_NOW);
+	dlerror();
+	//pvPluginHandle = loadLADSPAPluginLibrary(pcPluginFilename);
+	//dlerror();
+	pfDescriptorFunction = (LADSPA_Descriptor_Function)dlsym(pvPluginHandle, "ladspa_descriptor");
+	if (!pfDescriptorFunction) {
+	  const char * pcError = dlerror();
+	  if (pcError) 
+		printf("Unable to find ladspa_descriptor() function in plugin file "
+			   "\"%s\": %s.\n"
+			   "Are you sure this is a LADSPA plugin file?\n", 
+			   pcPluginFilename,
+			   pcError);
+	  //return 1;
+	}
+  }
+
+  // get parameter example
+  float getParam() { return m_param; }
     
 private:
-    // instance data
-    float m_param;
+  // instance data
+  float m_param;
+  LADSPA_Descriptor_Function pfDescriptorFunction;
+  const LADSPA_Descriptor * psDescriptor;
+  LADSPA_PortRangeHintDescriptor iHintDescriptor;
+  LADSPA_Data fBound;
+  LADSPA_Data fDefault;
+  unsigned long lPluginIndex;
+  unsigned long lPortIndex;
+  unsigned long lSpaceIndex;
+  unsigned long lSpacePadding1;
+  unsigned long lSpacePadding2;
+  unsigned long lLength;
+  void * pvPluginHandle;
 };
 
 
@@ -90,6 +131,11 @@ CK_DLL_QUERY( Ladspa )
     QUERY->add_mfun(QUERY, ladspa_setParam, "float", "param");
     // example of adding argument to the above method
     QUERY->add_arg(QUERY, "float", "arg");
+
+    // example of adding setter method
+    QUERY->add_mfun(QUERY, ladspa_printLabel, "void", "load");
+    // example of adding argument to the above method
+    QUERY->add_arg(QUERY, "string", "filename");
 
     // example of adding getter method
     QUERY->add_mfun(QUERY, ladspa_getParam, "float", "param");
@@ -168,4 +214,13 @@ CK_DLL_MFUN(ladspa_getParam)
     Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
     // set the return value
     RETURN->v_float = bcdata->getParam();
+}
+
+// example implementation for setter
+CK_DLL_MFUN(ladspa_printLabel)
+{
+    // get our c++ class pointer
+    Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
+    // set the return value
+    bcdata->printLabel(GET_NEXT_STRING(ARGS));
 }
