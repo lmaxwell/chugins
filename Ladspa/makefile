@@ -3,9 +3,9 @@
 CHUGIN_NAME=Ladspa
 
 # all of the c/cpp files that compose this chugin
-C_MODULES=load.c search.c default.c
+C_MODULES=
 CXX_MODULES=Ladspa.cpp
-LIBS=-ldl -lm
+LIBS=
 # where the chuck headers are
 CK_SRC_PATH?=../chuck/include/
 

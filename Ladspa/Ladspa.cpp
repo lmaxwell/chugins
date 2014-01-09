@@ -15,27 +15,22 @@
 #include <limits.h>
 #include <dlfcn.h>
 
+#define DEFAULT_BUFSIZE 1024
+
 // declaration of chugin constructor
 CK_DLL_CTOR(ladspa_ctor);
 // declaration of chugin desctructor
 CK_DLL_DTOR(ladspa_dtor);
 
-// example of getter/setter
-CK_DLL_MFUN(ladspa_setParam);
-CK_DLL_MFUN(ladspa_getParam);
-
 CK_DLL_MFUN(ladspa_load);
 CK_DLL_MFUN(ladspa_info);
+CK_DLL_MFUN(ladspa_label);
 
 // for Chugins extending UGen, this is mono synthesis function for 1 sample
 CK_DLL_TICK(ladspa_tick);
 
-//extern void * loadLADSPAPluginLibrary(const char * pcPluginFilename);
-extern void * dlopenLADSPA(const char * pcFilename, int iFlag);
-
 // this is a special offset reserved for Chugin internal data
 t_CKINT ladspa_data_offset = 0;
-
 
 // class definition for internal Chugin data
 // (note: this isn't strictly necessary, but serves as example
@@ -46,28 +41,54 @@ public:
     // constructor
     Ladspa( t_CKFLOAT fs)
     {
-	  pluginLoaded = false;
-        m_param = 0;
+	pPlugin = (LADSPA_Handle *)malloc(sizeof(LADSPA_Handle));
+	pluginLoaded = false;
+	srate = fs;
+	bufsize = DEFAULT_BUFSIZE;
     }
-
-    // for Chugins extending UGen
-    SAMPLE tick( SAMPLE in )
-    {
-        // default: this passes whatever input is patched into Chugin
-        return in;
+  
+  ~Ladspa()
+  {
+	//psDescriptor->deactivate(pPlugin);
+	if (pluginLoaded) dlclose(pvPluginHandle);
+	printf("closed LADSPA plugin.\n");
+	//free (pvPluginHandle);
+  }
+  
+  // for Chugins extending UGen
+  SAMPLE tick( SAMPLE in )
+  {
+	  // default: this passes whatever input is patched into Chugin
+	  return in;
     }
-
-    // set parameter example
-    float setParam( t_CKFLOAT p )
-    {
-        m_param = p;
-        return p;
-    }
+  
+  int choosePlugin ( Chuck_String *p)
+  {
+	const char * pcPluginLabel = p->str.c_str();	
+	for (int i=0;; i++)
+	  {
+		psDescriptor = pfDescriptorFunction(i);
+		if (psDescriptor == NULL)
+		  {
+			printf("LADSPA error: unable to find lable \"%s\" in plugin.\n", pcPluginLabel);
+			return 0;
+		  }
+		if (strcmp(psDescriptor->Label, pcPluginLabel) == 0)
+		  {
+			printf("LADSPA: Activating plugin \"%s\"...\n", pcPluginLabel);
+			pPlugin = psDescriptor->instantiate(psDescriptor, srate);
+			pluginLoaded = true;
+			connectPorts();
+			return 1;
+		  }
+	  }
+	return 0;
+  }
 
   int LADSPA_load ( Chuck_String * p)
   {
 	const char * pcPluginFilename = p->str.c_str();
-	printf("Loading LADSPA plugin %s...\n", pcPluginFilename);
+	printf("Loading LADSPA plugin %s\n", pcPluginFilename);
 	pvPluginHandle = dlopen(pcPluginFilename, RTLD_NOW);
 	dlerror();
 
@@ -81,8 +102,7 @@ public:
 			   pcPluginFilename);
 	  return 0;
 	}
-	
-	pluginLoaded = true;
+	/*
 	for (lPluginIndex = 0;; lPluginIndex++)
 	  {
 		
@@ -100,18 +120,22 @@ public:
 	  }
 	printf("--------------------------------------------------\n");
 	putchar('\n');
+	*/
 	return 1;
   }		
 
   int LADSPA_info ()
   {
+	/*
 	if (!pluginLoaded) {
 	  printf("LADSPA error: no info found on plugin. Has it been loaded?\n");
 	  return 0;
 	}
-	else for (lPluginIndex = 0;; lPluginIndex++)
+	*/
+	printf("--------------------------------------------------\n");
+	for (int i = 0;; i++)
 	  {		
-		psDescriptor = pfDescriptorFunction(lPluginIndex);
+		psDescriptor = pfDescriptorFunction(i);
 		if (!psDescriptor)
 		  {
 			break;
@@ -127,48 +151,46 @@ public:
 		if (psDescriptor->PortCount == 0)
 		  printf("\tERROR: PLUGIN HAS NO PORTS.\n");
 		
-		for (lPortIndex = 0; 
-			 lPortIndex < psDescriptor->PortCount; 
-			 lPortIndex++) {
-		  
-		  printf("\t\"%s\" ", psDescriptor->PortNames[lPortIndex]);
+		for (int i = 0; i < psDescriptor->PortCount; i++)
+		  {
+			printf("\t\"%s\" ", psDescriptor->PortNames[i]);
 		  
 		  if (LADSPA_IS_PORT_INPUT
-			  (psDescriptor->PortDescriptors[lPortIndex])
+			  (psDescriptor->PortDescriptors[i])
 			  && LADSPA_IS_PORT_OUTPUT
-			  (psDescriptor->PortDescriptors[lPortIndex]))
+			  (psDescriptor->PortDescriptors[i]))
 			printf("ERROR: INPUT AND OUTPUT");
 		  else if (LADSPA_IS_PORT_INPUT
-				   (psDescriptor->PortDescriptors[lPortIndex]))
+				   (psDescriptor->PortDescriptors[i]))
 			printf("input");
 		  else if (LADSPA_IS_PORT_OUTPUT
-				   (psDescriptor->PortDescriptors[lPortIndex]))
+				   (psDescriptor->PortDescriptors[i]))
 			printf("output");
 		  else 
 			printf("ERROR: NEITHER INPUT NOR OUTPUT");
 		  
 		  if (LADSPA_IS_PORT_CONTROL
-			  (psDescriptor->PortDescriptors[lPortIndex])
+			  (psDescriptor->PortDescriptors[i])
 			  && LADSPA_IS_PORT_AUDIO
-			  (psDescriptor->PortDescriptors[lPortIndex]))
+			  (psDescriptor->PortDescriptors[i]))
 			printf(", ERROR: CONTROL AND AUDIO");
 		  else if (LADSPA_IS_PORT_CONTROL
-				   (psDescriptor->PortDescriptors[lPortIndex]))
+				   (psDescriptor->PortDescriptors[i]))
 			printf(", control");
 		  else if (LADSPA_IS_PORT_AUDIO
-				   (psDescriptor->PortDescriptors[lPortIndex]))
+				   (psDescriptor->PortDescriptors[i]))
 			printf(", audio");
 		  else 
 			printf(", ERROR: NEITHER CONTROL NOR AUDIO");
 		  
 		  iHintDescriptor 
-			= psDescriptor->PortRangeHints[lPortIndex].HintDescriptor;
+			= psDescriptor->PortRangeHints[i].HintDescriptor;
 		  
 		  if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor)
 			  || LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor)) {
 			printf(", ");
 			if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor)) {
-			  fBound = psDescriptor->PortRangeHints[lPortIndex].LowerBound;
+			  fBound = psDescriptor->PortRangeHints[i].LowerBound;
 			  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fBound != 0) 
 				printf("%g*srate", fBound);
 			  else
@@ -178,7 +200,7 @@ public:
 			  printf("...");
 			printf(" to ");
 			if (LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor)) {
-			  fBound = psDescriptor->PortRangeHints[lPortIndex].UpperBound;
+			  fBound = psDescriptor->PortRangeHints[i].UpperBound;
 			  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fBound != 0)
 				printf("%g*srate", fBound);
 			  else
@@ -204,7 +226,7 @@ public:
 	case LADSPA_HINT_DEFAULT_NONE:
 	  break;
 		  case LADSPA_HINT_DEFAULT_MINIMUM:
-			fDefault = psDescriptor->PortRangeHints[lPortIndex].LowerBound;
+			fDefault = psDescriptor->PortRangeHints[i].LowerBound;
 			if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
 			  printf(", default %g*srate", fDefault);
 	  else 
@@ -213,16 +235,16 @@ public:
 		  case LADSPA_HINT_DEFAULT_LOW:
 			if (LADSPA_IS_HINT_LOGARITHMIC(iHintDescriptor)) {
 			  fDefault 
-				= exp(log(psDescriptor->PortRangeHints[lPortIndex].LowerBound) 
+				= exp(log(psDescriptor->PortRangeHints[i].LowerBound) 
 					  * 0.75
-					  + log(psDescriptor->PortRangeHints[lPortIndex].UpperBound) 
+					  + log(psDescriptor->PortRangeHints[i].UpperBound) 
 					  * 0.25);
 			}
 			else {
 			  fDefault 
-				= (psDescriptor->PortRangeHints[lPortIndex].LowerBound
+				= (psDescriptor->PortRangeHints[i].LowerBound
 				   * 0.75
-				   + psDescriptor->PortRangeHints[lPortIndex].UpperBound
+				   + psDescriptor->PortRangeHints[i].UpperBound
 				   * 0.25);
 			}
 			if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
@@ -233,13 +255,13 @@ public:
 		  case LADSPA_HINT_DEFAULT_MIDDLE:
 			if (LADSPA_IS_HINT_LOGARITHMIC(iHintDescriptor)) {
 			  fDefault 
-				= sqrt(psDescriptor->PortRangeHints[lPortIndex].LowerBound
-					   * psDescriptor->PortRangeHints[lPortIndex].UpperBound);
+				= sqrt(psDescriptor->PortRangeHints[i].LowerBound
+					   * psDescriptor->PortRangeHints[i].UpperBound);
 			}
 			else {
 			  fDefault 
-				= 0.5 * (psDescriptor->PortRangeHints[lPortIndex].LowerBound
-						 + psDescriptor->PortRangeHints[lPortIndex].UpperBound);
+				= 0.5 * (psDescriptor->PortRangeHints[i].LowerBound
+						 + psDescriptor->PortRangeHints[i].UpperBound);
 			}
 			if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
 			  printf(", default %g*srate", fDefault);
@@ -249,16 +271,16 @@ public:
 		  case LADSPA_HINT_DEFAULT_HIGH:
 			if (LADSPA_IS_HINT_LOGARITHMIC(iHintDescriptor)) {
 			  fDefault 
-				= exp(log(psDescriptor->PortRangeHints[lPortIndex].LowerBound) 
+				= exp(log(psDescriptor->PortRangeHints[i].LowerBound) 
 					  * 0.25
-					  + log(psDescriptor->PortRangeHints[lPortIndex].UpperBound) 
+					  + log(psDescriptor->PortRangeHints[i].UpperBound) 
 					  * 0.75);
 			}
 			else {
 			  fDefault 
-				= (psDescriptor->PortRangeHints[lPortIndex].LowerBound
+				= (psDescriptor->PortRangeHints[i].LowerBound
 				   * 0.25
-				   + psDescriptor->PortRangeHints[lPortIndex].UpperBound
+				   + psDescriptor->PortRangeHints[i].UpperBound
 				   * 0.75);
 			}
 			if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
@@ -267,7 +289,7 @@ public:
 			  printf(", default %g", fDefault);
 			break;
 		  case LADSPA_HINT_DEFAULT_MAXIMUM:
-			fDefault = psDescriptor->PortRangeHints[lPortIndex].UpperBound;
+			fDefault = psDescriptor->PortRangeHints[i].UpperBound;
 			if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
 			  printf(", default %g*srate", fDefault);
 			else 
@@ -305,23 +327,51 @@ public:
     putchar('\n');	
 	return 1;
   }
-
-  // get parameter example
-  float getParam() { return m_param; }
     
 private:
+
+  void connectPorts()
+  {
+	printf("Connecting LADSPA audio ports...\n\n");
+	numchans = 2;
+	inbuf = (LADSPA_Data **)malloc(sizeof(LADSPA_Data *)*numchans);
+	outbuf = (LADSPA_Data **)malloc(sizeof(LADSPA_Data *)*numchans);
+	int ChuckBufferIndex = 0;
+	for (int i=0; i<numchans; i++)
+	  {
+		inbuf[i] = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*bufsize);
+		outbuf[i] = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*bufsize);
+	  }
+
+	// Connect audio inputs
+	for (int i=0; i<psDescriptor->PortCount; i++)
+	  {
+		iPortDescriptor = psDescriptor->PortDescriptors[i];
+		if (LADSPA_IS_PORT_INPUT(iPortDescriptor) &&
+			LADSPA_IS_PORT_AUDIO(iPortDescriptor))
+		  {
+			printf("Connecting input channel %d to plugin channel %d\n", ChuckBufferIndex, i);
+			psDescriptor->connect_port(pPlugin,i, inbuf[ChuckBufferIndex]);
+			ChuckBufferIndex = (ChuckBufferIndex + 1) % numchans;
+		  }
+	  }
+  }
+
   // instance data
-  float m_param;
   LADSPA_Descriptor_Function pfDescriptorFunction;
   const LADSPA_Descriptor * psDescriptor;
   LADSPA_PortRangeHintDescriptor iHintDescriptor;
+  LADSPA_PortDescriptor iPortDescriptor;
   LADSPA_Data fBound;
   LADSPA_Data fDefault;
-  unsigned long lPluginIndex;
-  unsigned long lPortIndex;
-  unsigned long lSpaceIndex;
+  LADSPA_Handle pPlugin;
+  LADSPA_Data ** inbuf, ** outbuf; // audio in and out buffers (multichannel)
+  LADSPA_Data * kinbuf, * koutbuf; // control in and out buffers
   void * pvPluginHandle;
   bool pluginLoaded;
+  int bufsize;
+  int numchans;
+  float srate;
 };
 
 
@@ -350,20 +400,17 @@ CK_DLL_QUERY( Ladspa )
     // and declare a tickf function using CK_DLL_TICKF
 
     // example of adding setter method
-    QUERY->add_mfun(QUERY, ladspa_setParam, "float", "param");
-    // example of adding argument to the above method
-    QUERY->add_arg(QUERY, "float", "arg");
-
-    // example of adding setter method
     QUERY->add_mfun(QUERY, ladspa_load, "int", "load");
     // example of adding argument to the above method
     QUERY->add_arg(QUERY, "string", "filename");
 
     // example of adding setter method
-    QUERY->add_mfun(QUERY, ladspa_info, "int", "info");
+    QUERY->add_mfun(QUERY, ladspa_label, "int", "label");
+    // example of adding argument to the above method
+    QUERY->add_arg(QUERY, "string", "label");
 
-    // example of adding getter method
-    QUERY->add_mfun(QUERY, ladspa_getParam, "float", "param");
+    // example of adding setter method
+    QUERY->add_mfun(QUERY, ladspa_info, "int", "info");
     
     // this reserves a variable in the ChucK internal class to store 
     // referene to the c++ class we defined above
@@ -421,26 +468,6 @@ CK_DLL_TICK(ladspa_tick)
     return TRUE;
 }
 
-
-// example implementation for setter
-CK_DLL_MFUN(ladspa_setParam)
-{
-    // get our c++ class pointer
-    Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
-    // set the return value
-    RETURN->v_float = bcdata->setParam(GET_NEXT_FLOAT(ARGS));
-}
-
-
-// example implementation for getter
-CK_DLL_MFUN(ladspa_getParam)
-{
-    // get our c++ class pointer
-    Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
-    // set the return value
-    RETURN->v_float = bcdata->getParam();
-}
-
 // example implementation for setter
 CK_DLL_MFUN(ladspa_load)
 {
@@ -448,6 +475,15 @@ CK_DLL_MFUN(ladspa_load)
     Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
     // set the return value
     RETURN->v_int = bcdata->LADSPA_load(GET_NEXT_STRING(ARGS));
+}
+
+// example implementation for setter
+CK_DLL_MFUN(ladspa_label)
+{
+    // get our c++ class pointer
+    Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
+    // set the return value
+    RETURN->v_int = bcdata->choosePlugin(GET_NEXT_STRING(ARGS));
 }
 
 // example implementation for setter
