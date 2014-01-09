@@ -10,6 +10,7 @@
 #include "utils.h"
 
 // general includes
+#include <math.h>
 #include <stdio.h>
 #include <limits.h>
 #include <dlfcn.h>
@@ -23,12 +24,13 @@ CK_DLL_DTOR(ladspa_dtor);
 CK_DLL_MFUN(ladspa_setParam);
 CK_DLL_MFUN(ladspa_getParam);
 
-CK_DLL_MFUN(ladspa_printLabel);
+CK_DLL_MFUN(ladspa_load);
+CK_DLL_MFUN(ladspa_info);
 
 // for Chugins extending UGen, this is mono synthesis function for 1 sample
 CK_DLL_TICK(ladspa_tick);
 
-extern void * loadLADSPAPluginLibrary(const char * pcPluginFilename);
+//extern void * loadLADSPAPluginLibrary(const char * pcPluginFilename);
 extern void * dlopenLADSPA(const char * pcFilename, int iFlag);
 
 // this is a special offset reserved for Chugin internal data
@@ -44,6 +46,7 @@ public:
     // constructor
     Ladspa( t_CKFLOAT fs)
     {
+	  pluginLoaded = false;
         m_param = 0;
     }
 
@@ -61,25 +64,246 @@ public:
         return p;
     }
 
-  void printLabel ( Chuck_String * p)
+  int LADSPA_load ( Chuck_String * p)
   {
 	const char * pcPluginFilename = p->str.c_str();
-	printf("Received %s\n", pcPluginFilename);
+	printf("Loading LADSPA plugin %s...\n", pcPluginFilename);
 	pvPluginHandle = dlopen(pcPluginFilename, RTLD_NOW);
 	dlerror();
-	//pvPluginHandle = loadLADSPAPluginLibrary(pcPluginFilename);
-	//dlerror();
+
 	pfDescriptorFunction = (LADSPA_Descriptor_Function)dlsym(pvPluginHandle, "ladspa_descriptor");
 	if (!pfDescriptorFunction) {
 	  const char * pcError = dlerror();
 	  if (pcError) 
 		printf("Unable to find ladspa_descriptor() function in plugin file "
-			   "\"%s\": %s.\n"
+			   "\"%s\"\n"
 			   "Are you sure this is a LADSPA plugin file?\n", 
-			   pcPluginFilename,
-			   pcError);
-	  //return 1;
+			   pcPluginFilename);
+	  return 0;
 	}
+	
+	pluginLoaded = true;
+	for (lPluginIndex = 0;; lPluginIndex++)
+	  {
+		
+		psDescriptor = pfDescriptorFunction(lPluginIndex);
+		if (!psDescriptor)
+		  break;
+		
+		putchar('\n');
+		
+		printf("Plugin Name: \"%s\"\n", psDescriptor->Name);
+		printf("Plugin Label: \"%s\"\n", psDescriptor->Label);
+		printf("Plugin Unique ID: %lu\n", psDescriptor->UniqueID);
+		printf("Maker: \"%s\"\n", psDescriptor->Maker);
+		printf("Copyright: \"%s\"\n", psDescriptor->Copyright);
+	  }
+	printf("--------------------------------------------------\n");
+	putchar('\n');
+	return 1;
+  }		
+
+  int LADSPA_info ()
+  {
+	if (!pluginLoaded) {
+	  printf("LADSPA error: no info found on plugin. Has it been loaded?\n");
+	  return 0;
+	}
+	else for (lPluginIndex = 0;; lPluginIndex++)
+	  {		
+		psDescriptor = pfDescriptorFunction(lPluginIndex);
+		if (!psDescriptor)
+		  {
+			break;
+		  }
+		
+		printf("Plugin Name: \"%s\"\n", psDescriptor->Name);
+		printf("Plugin Label: \"%s\"\n", psDescriptor->Label);
+		printf("Plugin Unique ID: %lu\n", psDescriptor->UniqueID);
+		printf("Maker: \"%s\"\n", psDescriptor->Maker);
+		printf("Copyright: \"%s\"\n", psDescriptor->Copyright);
+		printf("Ports:");
+		
+		if (psDescriptor->PortCount == 0)
+		  printf("\tERROR: PLUGIN HAS NO PORTS.\n");
+		
+		for (lPortIndex = 0; 
+			 lPortIndex < psDescriptor->PortCount; 
+			 lPortIndex++) {
+		  
+		  printf("\t\"%s\" ", psDescriptor->PortNames[lPortIndex]);
+		  
+		  if (LADSPA_IS_PORT_INPUT
+			  (psDescriptor->PortDescriptors[lPortIndex])
+			  && LADSPA_IS_PORT_OUTPUT
+			  (psDescriptor->PortDescriptors[lPortIndex]))
+			printf("ERROR: INPUT AND OUTPUT");
+		  else if (LADSPA_IS_PORT_INPUT
+				   (psDescriptor->PortDescriptors[lPortIndex]))
+			printf("input");
+		  else if (LADSPA_IS_PORT_OUTPUT
+				   (psDescriptor->PortDescriptors[lPortIndex]))
+			printf("output");
+		  else 
+			printf("ERROR: NEITHER INPUT NOR OUTPUT");
+		  
+		  if (LADSPA_IS_PORT_CONTROL
+			  (psDescriptor->PortDescriptors[lPortIndex])
+			  && LADSPA_IS_PORT_AUDIO
+			  (psDescriptor->PortDescriptors[lPortIndex]))
+			printf(", ERROR: CONTROL AND AUDIO");
+		  else if (LADSPA_IS_PORT_CONTROL
+				   (psDescriptor->PortDescriptors[lPortIndex]))
+			printf(", control");
+		  else if (LADSPA_IS_PORT_AUDIO
+				   (psDescriptor->PortDescriptors[lPortIndex]))
+			printf(", audio");
+		  else 
+			printf(", ERROR: NEITHER CONTROL NOR AUDIO");
+		  
+		  iHintDescriptor 
+			= psDescriptor->PortRangeHints[lPortIndex].HintDescriptor;
+		  
+		  if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor)
+			  || LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor)) {
+			printf(", ");
+			if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor)) {
+			  fBound = psDescriptor->PortRangeHints[lPortIndex].LowerBound;
+			  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fBound != 0) 
+				printf("%g*srate", fBound);
+			  else
+				printf("%g", fBound);
+			}
+			else
+			  printf("...");
+			printf(" to ");
+			if (LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor)) {
+			  fBound = psDescriptor->PortRangeHints[lPortIndex].UpperBound;
+			  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fBound != 0)
+				printf("%g*srate", fBound);
+			  else
+				printf("%g", fBound);
+			}
+			else
+			  printf("...");
+			
+		  }
+		  if (LADSPA_IS_HINT_TOGGLED(iHintDescriptor)) {
+			if ((iHintDescriptor 
+				 | LADSPA_HINT_DEFAULT_0
+				 | LADSPA_HINT_DEFAULT_1)
+				!= (LADSPA_HINT_TOGGLED 
+					| LADSPA_HINT_DEFAULT_0
+					| LADSPA_HINT_DEFAULT_1))
+			  printf(", ERROR: TOGGLED INCOMPATIBLE WITH OTHER HINT");
+			else
+			  printf(", toggled");
+		  }
+		  
+		  switch (iHintDescriptor & LADSPA_HINT_DEFAULT_MASK) {
+	case LADSPA_HINT_DEFAULT_NONE:
+	  break;
+		  case LADSPA_HINT_DEFAULT_MINIMUM:
+			fDefault = psDescriptor->PortRangeHints[lPortIndex].LowerBound;
+			if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
+			  printf(", default %g*srate", fDefault);
+	  else 
+	    printf(", default %g", fDefault);
+			break;
+		  case LADSPA_HINT_DEFAULT_LOW:
+			if (LADSPA_IS_HINT_LOGARITHMIC(iHintDescriptor)) {
+			  fDefault 
+				= exp(log(psDescriptor->PortRangeHints[lPortIndex].LowerBound) 
+					  * 0.75
+					  + log(psDescriptor->PortRangeHints[lPortIndex].UpperBound) 
+					  * 0.25);
+			}
+			else {
+			  fDefault 
+				= (psDescriptor->PortRangeHints[lPortIndex].LowerBound
+				   * 0.75
+				   + psDescriptor->PortRangeHints[lPortIndex].UpperBound
+				   * 0.25);
+			}
+			if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
+			  printf(", default %g*srate", fDefault);
+			else 
+			  printf(", default %g", fDefault);
+			break;
+		  case LADSPA_HINT_DEFAULT_MIDDLE:
+			if (LADSPA_IS_HINT_LOGARITHMIC(iHintDescriptor)) {
+			  fDefault 
+				= sqrt(psDescriptor->PortRangeHints[lPortIndex].LowerBound
+					   * psDescriptor->PortRangeHints[lPortIndex].UpperBound);
+			}
+			else {
+			  fDefault 
+				= 0.5 * (psDescriptor->PortRangeHints[lPortIndex].LowerBound
+						 + psDescriptor->PortRangeHints[lPortIndex].UpperBound);
+			}
+			if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
+			  printf(", default %g*srate", fDefault);
+			else 
+			  printf(", default %g", fDefault);
+			break;
+		  case LADSPA_HINT_DEFAULT_HIGH:
+			if (LADSPA_IS_HINT_LOGARITHMIC(iHintDescriptor)) {
+			  fDefault 
+				= exp(log(psDescriptor->PortRangeHints[lPortIndex].LowerBound) 
+					  * 0.25
+					  + log(psDescriptor->PortRangeHints[lPortIndex].UpperBound) 
+					  * 0.75);
+			}
+			else {
+			  fDefault 
+				= (psDescriptor->PortRangeHints[lPortIndex].LowerBound
+				   * 0.25
+				   + psDescriptor->PortRangeHints[lPortIndex].UpperBound
+				   * 0.75);
+			}
+			if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
+			  printf(", default %g*srate", fDefault);
+			else 
+			  printf(", default %g", fDefault);
+			break;
+		  case LADSPA_HINT_DEFAULT_MAXIMUM:
+			fDefault = psDescriptor->PortRangeHints[lPortIndex].UpperBound;
+			if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
+			  printf(", default %g*srate", fDefault);
+			else 
+			  printf(", default %g", fDefault);
+			break;
+		  case LADSPA_HINT_DEFAULT_0:
+			printf(", default 0");
+			break;
+		  case LADSPA_HINT_DEFAULT_1:
+			printf(", default 1");
+			break;
+		  case LADSPA_HINT_DEFAULT_100:
+			printf(", default 100");
+			break;
+		  case LADSPA_HINT_DEFAULT_440:
+			printf(", default 440");
+			break;
+		  default:
+			printf(", UNKNOWN DEFAULT CODE");
+			/* (Not necessarily an error - may be a newer version.) */
+			break;
+		  }
+		  
+		  if (LADSPA_IS_HINT_LOGARITHMIC(iHintDescriptor))
+			printf(", logarithmic");
+		  
+		  if (LADSPA_IS_HINT_INTEGER(iHintDescriptor))
+			printf(", integer");
+		  
+		  putchar('\n');
+		}
+		putchar('\n');
+	  }
+	printf("--------------------------------------------------\n");	
+    putchar('\n');	
+	return 1;
   }
 
   // get parameter example
@@ -96,10 +320,8 @@ private:
   unsigned long lPluginIndex;
   unsigned long lPortIndex;
   unsigned long lSpaceIndex;
-  unsigned long lSpacePadding1;
-  unsigned long lSpacePadding2;
-  unsigned long lLength;
   void * pvPluginHandle;
+  bool pluginLoaded;
 };
 
 
@@ -133,9 +355,12 @@ CK_DLL_QUERY( Ladspa )
     QUERY->add_arg(QUERY, "float", "arg");
 
     // example of adding setter method
-    QUERY->add_mfun(QUERY, ladspa_printLabel, "void", "load");
+    QUERY->add_mfun(QUERY, ladspa_load, "int", "load");
     // example of adding argument to the above method
     QUERY->add_arg(QUERY, "string", "filename");
+
+    // example of adding setter method
+    QUERY->add_mfun(QUERY, ladspa_info, "int", "info");
 
     // example of adding getter method
     QUERY->add_mfun(QUERY, ladspa_getParam, "float", "param");
@@ -217,10 +442,19 @@ CK_DLL_MFUN(ladspa_getParam)
 }
 
 // example implementation for setter
-CK_DLL_MFUN(ladspa_printLabel)
+CK_DLL_MFUN(ladspa_load)
 {
     // get our c++ class pointer
     Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
     // set the return value
-    bcdata->printLabel(GET_NEXT_STRING(ARGS));
+    RETURN->v_int = bcdata->LADSPA_load(GET_NEXT_STRING(ARGS));
+}
+
+// example implementation for setter
+CK_DLL_MFUN(ladspa_info)
+{
+    // get our c++ class pointer
+    Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
+    // set the return value
+    RETURN->v_int = bcdata->LADSPA_info();
 }
