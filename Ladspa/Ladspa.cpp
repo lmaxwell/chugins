@@ -143,7 +143,7 @@ public:
 				 pcPluginFilename);
 		return 0;
       }
-	LADSPA_list();
+	//LADSPA_list();
     //printf ("Valid LADSPA file found!\n");
 	return 1;
   }
