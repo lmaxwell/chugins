@@ -6,4 +6,4 @@ Noise n => Ladspa plugin => dac;
 plugname => plugin.load;
 labelname => plugin.label;
 //plugin.info();
-10::ms => now;
+second => now;

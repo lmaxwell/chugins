@@ -7,7 +7,6 @@
 #include "chuck_dl.h"
 #include "chuck_def.h"
 #include "ladspa.h"
-#include "utils.h"
 
 // general includes
 #include <math.h>
@@ -60,13 +59,13 @@ public:
   // for Chugins extending UGen
   void tick( SAMPLE *in, SAMPLE *out, int nframes )
   {
-	printf("Test: how many ports? %d\n", (int)psDescriptor->PortCount);
+	//printf("Test: how many ports? %d\n", (int)psDescriptor->PortCount);
 	if (pluginLoaded)
 	  {
-		//for (int i=0; i<inports; i++) inbuf[i][0] = in[i%2];
+		for (int i=0; i<inports; i++) inbuf[i][0] = (LADSPA_Data)in[i%2];
 		psDescriptor->run(pPlugin, 1);
+		for (int i=0; i<2; i++) out[i%2] = (SAMPLE)outbuf[i%outports][0];
 		//printf("signal: %f, out: %f\n",inbuf[0][0],outbuf[0][0]);
-		//for (int i=0; i<2; i++) out[i%2] = outbuf[i%outports][0];
 	  }
   }
   
@@ -85,7 +84,7 @@ public:
 	  {
 	    printf("LADSPA: Activating plugin \"%s\"...\n", pcPluginLabel);
 	    pPlugin = psDescriptor->instantiate(psDescriptor, srate);
-	    connectPorts();//psDescriptor);
+	    connectPorts();
 	    return 1;
 	  }
       }
@@ -377,6 +376,8 @@ private:
 	
     inbuf = (LADSPA_Data **)malloc(sizeof(LADSPA_Data *)*inports);
     outbuf = (LADSPA_Data **)malloc(sizeof(LADSPA_Data *)*outports);
+    kinbuf = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*inports);
+    koutbuf = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*outports);
     for (int i=0; i<inports; i++)
       {
 		inbuf[i] = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*bufsize);
@@ -385,6 +386,8 @@ private:
       {
 		outbuf[i] = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*bufsize);
       }
+	for (int i=0; i<kinports; i++) kinbuf[i] = 0.0;
+	for (int i=0; i<koutports; i++) koutbuf[i] = 0.0;
 	
     printf("Kinports: %d, Koutputs: %d, Audio inports: %d, outports: %d\n",
 	kinports, koutports, inports, outports);
