@@ -264,8 +264,8 @@ private:
 	
     inbuf = (LADSPA_Data **)malloc(sizeof(LADSPA_Data *)*inports);
     outbuf = (LADSPA_Data **)malloc(sizeof(LADSPA_Data *)*outports);
-    kinbuf = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*inports);
-    koutbuf = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*outports);
+    kinbuf = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*kinports);
+    koutbuf = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*koutports);
     kinbufRef = (short *)malloc(sizeof(short)*inports);
     koutbufRef = (short *)malloc(sizeof(short)*outports);
     for (int i=0; i<inports; i++)
