@@ -25,12 +25,21 @@ CK_DLL_MFUN(ladspa_load);
 CK_DLL_MFUN(ladspa_list);
 CK_DLL_MFUN(ladspa_info);
 CK_DLL_MFUN(ladspa_label);
+CK_DLL_MFUN(ladspa_set);
+CK_DLL_MFUN(ladspa_get);
 
 // for Chugins extending UGen, this is mono synthesis function for 1 sample
 CK_DLL_TICKF(ladspa_tick);
 
 // this is a special offset reserved for Chugin internal data
 t_CKINT ladspa_data_offset = 0;
+
+extern "C" {
+  int 
+getLADSPADefault(const LADSPA_PortRangeHint * psPortRangeHint,
+		 const unsigned long          lSampleRate,
+				 LADSPA_Data                * pfResult);
+}
 
 // class definition for internal Chugin data
 // (note: this isn't strictly necessary, but serves as example
@@ -59,14 +68,45 @@ public:
   // for Chugins extending UGen
   void tick( SAMPLE *in, SAMPLE *out, int nframes )
   {
-	//printf("Test: how many ports? %d\n", (int)psDescriptor->PortCount);
 	if (pluginLoaded)
 	  {
 		for (int i=0; i<inports; i++) inbuf[i][0] = (LADSPA_Data)in[i%2];
 		psDescriptor->run(pPlugin, 1);
 		for (int i=0; i<2; i++) out[i%2] = (SAMPLE)outbuf[i%outports][0];
-		//printf("signal: %f, out: %f\n",inbuf[0][0],outbuf[0][0]);
 	  }
+  }
+
+  float set( float val, int param)
+  {
+	//int param = (int)fparam;
+	if (param < kinports)
+	  {
+		printf ("LADSA: setting parameter \"%s\" to %f\n",
+				psDescriptor->PortNames[kinbufRef[param]], val);
+		kinbuf[param] = (LADSPA_Data)val;
+	  }
+	else
+	  if (kinports>1)
+		printf ("LADSPA Error: param must be between 0 and %d.\n", kinports-1);
+	  else
+		printf ("LADSPA Error: param must be 0.\n");
+  	return val;
+  }
+
+  float get (int param)
+  {
+	if (koutports == 0)
+	  {
+		printf ("LADSPA Error: plugin has no control output ports.\n");
+		return 0;
+	  }	
+	if (param < koutports)
+	  return koutbuf[param];
+	if (koutports>0)
+	  printf ("LADSPA Error: param must be between 0 and %d.\n", koutports-1);
+	else
+	  printf ("LADSPA Error: param must be 0.\n");
+	return 0;
   }
   
   int choosePlugin ( Chuck_String *p)
@@ -378,6 +418,8 @@ private:
     outbuf = (LADSPA_Data **)malloc(sizeof(LADSPA_Data *)*outports);
     kinbuf = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*inports);
     koutbuf = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*outports);
+    kinbufRef = (short *)malloc(sizeof(short)*inports);
+    koutbufRef = (short *)malloc(sizeof(short)*outports);
     for (int i=0; i<inports; i++)
       {
 		inbuf[i] = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*bufsize);
@@ -386,8 +428,16 @@ private:
       {
 		outbuf[i] = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*bufsize);
       }
-	for (int i=0; i<kinports; i++) kinbuf[i] = 0.0;
-	for (int i=0; i<koutports; i++) koutbuf[i] = 0.0;
+	for (int i=0; i<kinports; i++)
+	  {
+		kinbuf[i] = 0.0;
+		kinbufRef[i] = 0;
+	  }
+	for (int i=0; i<koutports; i++)
+	  {
+		koutbuf[i] = 0.0;
+		koutbufRef[i] = 0;
+	  }
 	
     printf("Kinports: %d, Koutputs: %d, Audio inports: %d, outports: %d\n",
 	kinports, koutports, inports, outports);
@@ -411,9 +461,16 @@ private:
 		else if (LADSPA_IS_PORT_CONTROL(iPortDescriptor))
 		  {
 			if (LADSPA_IS_PORT_INPUT(iPortDescriptor))
-			  psDescriptor->connect_port(pPlugin, i, &kinbuf[kinbufIndex++]);
+			  {
+				psDescriptor->connect_port(pPlugin, i, &kinbuf[kinbufIndex]);
+				kinbuf[kinbufIndex] = psDescriptor->PortRangeHints[i].LowerBound;
+				kinbufRef[kinbufIndex++] = i;
+			  }
 			else if (LADSPA_IS_PORT_OUTPUT(iPortDescriptor))
-			  psDescriptor->connect_port(pPlugin, i, &koutbuf[koutbufIndex++]);
+			  {
+				psDescriptor->connect_port(pPlugin, i, &koutbuf[koutbufIndex]);
+				koutbufRef[koutbufIndex++] = i;
+			  }
 		  }
       }
 	
@@ -436,6 +493,7 @@ private:
   LADSPA_Handle pPlugin;
   LADSPA_Data ** inbuf, ** outbuf; // audio in and out buffers (multichannel)
   LADSPA_Data * kinbuf, * koutbuf; // control in and out buffers
+  short * kinbufRef, * koutbufRef;
   void * pvPluginHandle;
   bool pluginLoaded;
   int bufsize;
@@ -478,6 +536,16 @@ CK_DLL_QUERY( Ladspa )
   QUERY->add_mfun(QUERY, ladspa_label, "int", "label");
   // example of adding argument to the above method
   QUERY->add_arg(QUERY, "string", "label");
+
+  // example of adding setter method
+  QUERY->add_mfun(QUERY, ladspa_set, "float", "set");
+  // example of adding argument to the above method
+  QUERY->add_arg(QUERY, "int", "param");
+  QUERY->add_arg(QUERY, "float", "val");
+
+  // example of adding setter method
+  QUERY->add_mfun(QUERY, ladspa_get, "float", "get");
+  QUERY->add_arg(QUERY, "int", "param");
   
   // example of adding setter method
   QUERY->add_mfun(QUERY, ladspa_info, "int", "info");
@@ -575,4 +643,27 @@ CK_DLL_MFUN(ladspa_list)
   Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
   // set the return value
   RETURN->v_int = bcdata->LADSPA_list();
+}
+
+// example implementation for setter
+CK_DLL_MFUN(ladspa_set)
+{
+  // get our c++ class pointer
+  Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
+  // set the return value
+  t_CKINT param = GET_NEXT_INT(ARGS);
+  t_CKFLOAT val = GET_NEXT_FLOAT(ARGS);
+
+  RETURN->v_float = bcdata->set(val, param);
+}
+
+// example implementation for setter
+CK_DLL_MFUN(ladspa_get)
+{
+  // get our c++ class pointer
+  Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
+  // set the return value
+  t_CKINT param = GET_NEXT_INT(ARGS);
+
+  RETURN->v_float = bcdata->get(param);
 }

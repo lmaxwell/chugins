@@ -3,7 +3,7 @@
 CHUGIN_NAME=Ladspa
 
 # all of the c/cpp files that compose this chugin
-C_MODULES=
+C_MODULES=default.c
 CXX_MODULES=Ladspa.cpp
 LIBS=
 # where the chuck headers are
