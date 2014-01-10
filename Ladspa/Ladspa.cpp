@@ -116,7 +116,7 @@ public:
 	  }
 	if (strcmp(psDescriptor->Label, pcPluginLabel) == 0)
 	  {
-	    printf("LADSPA: Activating plugin \"%s\"...\n", pcPluginLabel);
+	    printf("LADSPA: Activating plugin \"%s\"\n", pcPluginLabel);
 	    pPlugin = psDescriptor->instantiate(psDescriptor, srate);
 	    connectPorts();
 	    return 1;
@@ -124,7 +124,7 @@ public:
       }
     return 0;
   }
-  
+
   int LADSPA_load ( Chuck_String * p)
   {
     const char * pcPluginFilename = p->str.c_str();
@@ -135,29 +135,30 @@ public:
     pfDescriptorFunction = (LADSPA_Descriptor_Function)dlsym(pvPluginHandle, "ladspa_descriptor");
     if (!pfDescriptorFunction)
       {
-	const char * pcError = dlerror();
-	if (pcError) 
-	  printf("Unable to find ladspa_descriptor() function in plugin file "
-		 "\"%s\"\n"
-		 "Are you sure this is a LADSPA plugin file?\n", 
-		 pcPluginFilename);
-	return 0;
+		const char * pcError = dlerror();
+		if (pcError) 
+		  printf("Unable to find ladspa_descriptor() function in plugin file "
+				 "\"%s\"\n"
+				 "Are you sure this is a LADSPA plugin file?\n", 
+				 pcPluginFilename);
+		return 0;
       }
 	LADSPA_list();
     //printf ("Valid LADSPA file found!\n");
 	return 1;
   }
 
+  // TODO: error checking  
   int LADSPA_list ()
   {
     printf ("Plugins available under this LADSPA file:\n");
     for (int i = 0;; i++)
       {
 		
-	psDescriptor = pfDescriptorFunction(i);
-	if (!psDescriptor)
-	  break;
-	
+		psDescriptor = pfDescriptorFunction(i);
+		if (!psDescriptor)
+		  break;
+		
 	putchar('\n');
 	
 	printf("Plugin Label: \"%s\"\n", psDescriptor->Label);
@@ -165,10 +166,11 @@ public:
       }
     printf("--------------------------------------------------\n");
 	//putchar('\n');
-      
+	
     return 1;
   }		
-  
+
+  // TODO: error checking  
 int LADSPA_info ()
   {
   int bFound;
@@ -187,7 +189,7 @@ int LADSPA_info ()
     if (LADSPA_IS_PORT_INPUT(psDescriptor->PortDescriptors[lIndex])
 	&& LADSPA_IS_PORT_CONTROL(psDescriptor->PortDescriptors[lIndex])) {
       printf(
-	      "\t%d: %s",
+	      "\tControl %d: %s",
 	      knum++, psDescriptor->PortNames[lIndex]);
       bFound = 1;
       iHintDescriptor = psDescriptor->PortRangeHints[lIndex].HintDescriptor;
@@ -459,11 +461,11 @@ private:
 CK_DLL_QUERY( Ladspa )
 {
   // hmm, don't change this...
-  QUERY->setname(QUERY, "Ladspa");
+  QUERY->setname(QUERY, "LADSPA");
   
   // begin the class definition
   // can change the second argument to extend a different ChucK class
-  QUERY->begin_class(QUERY, "Ladspa", "UGen");
+  QUERY->begin_class(QUERY, "LADSPA", "UGen");
   
   // register the constructor (probably no need to change)
   QUERY->add_ctor(QUERY, ladspa_ctor);
@@ -483,7 +485,7 @@ CK_DLL_QUERY( Ladspa )
   QUERY->add_arg(QUERY, "string", "filename");
   
   // example of adding setter method
-  QUERY->add_mfun(QUERY, ladspa_label, "int", "label");
+  QUERY->add_mfun(QUERY, ladspa_label, "int", "activate");
   // example of adding argument to the above method
   QUERY->add_arg(QUERY, "string", "label");
 
