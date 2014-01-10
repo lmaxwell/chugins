@@ -22,6 +22,8 @@ List of New Chugins
   - FFT-based spectral delay and EQ
 - **Elliptic**
   - Elliptic filter, capable of very steep slopes or interesting harmonic ripples
+- **LADSPA**
+  - Load and run LADSPA plugins
 
 Chugins That I Am Working On
 --
