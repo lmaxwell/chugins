@@ -1,6 +1,9 @@
 "./filter.so" => string plugname;
-if (me.args()) me.arg(0) => plugname;
+"lpf" => string labelname;
+if (me.args()>0) me.arg(0) => plugname;
+if (me.args()>1) me.arg(1) => labelname;
 Noise n => Ladspa plugin => dac;
 plugname => plugin.load;
-plugin.info();
-"hpf" => plugin.label;
+labelname => plugin.label;
+//plugin.info();
+10::ms => now;
