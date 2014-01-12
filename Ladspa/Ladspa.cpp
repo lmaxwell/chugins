@@ -35,110 +35,143 @@ CK_DLL_TICKF(ladspa_tick);
 // this is a special offset reserved for Chugin internal data
 t_CKINT ladspa_data_offset = 0;
 
-enum port_t { INPUT, OUTPUT };
-
-struct ControlData
-{
-  unsigned short ladspaIndex;
-  LADSPA_Data value;
-  port_t porttype;
-};
-
 // class definition for internal Chugin data
 // (note: this isn't strictly necessary, but serves as example
 // of one recommended approach)
 class Ladspa
 {
 public:
+  // create port type to differentiate control ports
+  enum port_t { INPUT, OUTPUT };
+  
+  // control data is written into an array of ControlData structs
+  struct ControlData
+  {
+	unsigned short ladspaIndex;
+	LADSPA_Data value;
+	port_t porttype;
+  };
+
   // constructor
   Ladspa( t_CKFLOAT fs)
   {
     pPlugin = (LADSPA_Handle *)malloc(sizeof(LADSPA_Handle));
     pluginLoaded = false;
+	pluginActivated = false;
     srate = fs;
     bufsize = DEFAULT_BUFSIZE;
   }
-  
+
+  // destructor
   ~Ladspa()
   {
-	//const LADSPA_Descriptor * thisDescriptor = psDescriptor;
-    psDescriptor->cleanup(pPlugin);
-    if (pluginLoaded) dlclose(pvPluginHandle);
-    printf("closed LADSPA plugin.\n");
-    //free (pvPluginHandle);
+    if (pluginActivated) psDescriptor->cleanup(pPlugin);
+    if (pluginLoaded)
+	  {
+		dlclose(pvPluginHandle);
+		printf("LADSPA: closed plugin\n");
+	  }
   }
   
   // for Chugins extending UGen
   void tick( SAMPLE *in, SAMPLE *out, int nframes )
   {
-	if (pluginLoaded)
+	if (pluginActivated)
 	  {
 		for (int i=0; i<inports; i++) inbuf[i][0] = (LADSPA_Data)in[i%2];
-		psDescriptor->run(pPlugin, 1);
+		psDescriptor->run(pPlugin, bufsize);
 		for (int i=0; i<2; i++) out[i%2] = (SAMPLE)outbuf[i%outports][0];
+	  }
+	else
+	  {
+		out[0] = in[0];
+		out[1] = in[1];
 	  }
   }
 
   float set( float val, int param)
   {
-    //int param = (int)fparam;
-    if (param < kports)
-      if (kbuf[param].porttype != INPUT)
-	{
-	  printf ( "LADSPA Error: selected param is output only.\n");
-	  return 0;
-	}
-      else
-	{
-	  printf ("LADSA: setting parameter \"%s\" to %.2f\n",
-		  psDescriptor->PortNames[kbuf[param].ladspaIndex], val);
-	  kbuf[param].value = (LADSPA_Data)val;
-	}
-    else
-      if (kports>1)
-	printf ("LADSPA Error: param must be between 0 and %d.\n", kports-1);
-      else
-	printf ("LADSPA Error: param must be 0.\n");
-    return val;
+	if (pluginActivated)
+	  {
+		if (param < kports)
+		  if (kbuf[param].porttype != INPUT)
+			{
+			  printf ( "LADSPA Error: selected param is output only.\n");
+			  return 0;
+			}
+		  else
+			{
+			  printf ("LADSA: setting parameter \"%s\" to %.2f\n",
+					  psDescriptor->PortNames[kbuf[param].ladspaIndex], val);
+			  kbuf[param].value = (LADSPA_Data)val;
+			}
+		else
+		  if (kports>1)
+			printf ("LADSPA Error: param must be between 0 and %d.\n", kports-1);
+		  else
+			printf ("LADSPA Error: param must be 0.\n");
+	  }
+	return val;
   }
   
   float get (int param)
   {
-    if (param < kports)
-      return kbuf[param].value;
-    if (kports>0)
-      printf ("LADSPA Error: param must be between 0 and %d.\n", kports-1);
-    else
-      printf ("LADSPA Error: param must be 0.\n");
-    return 0;
+	if (pluginActivated)
+	  {
+		if (param < kports)
+		  return kbuf[param].value;
+		if (kports>0)
+		  printf ("LADSPA Error: param must be between 0 and %d.\n", kports-1);
+		else
+		  printf ("LADSPA Error: param must be 0.\n");
+	  }
+	return 0;
   }
   
   int choosePlugin ( Chuck_String *p)
   {
-    const char * pcPluginLabel = p->str.c_str();	
-    for (int i=0;; i++)
-      {
-	psDescriptor = pfDescriptorFunction(i);
-	if (psDescriptor == NULL)
+	if (pluginLoaded)
 	  {
-	    printf("LADSPA error: unable to find lable \"%s\" in plugin.\n", pcPluginLabel);
-	    return 0;
+		const char * pcPluginLabel = p->str.c_str();	
+		for (int i=0;; i++)
+		  {
+			psDescriptor = pfDescriptorFunction(i);
+			if (psDescriptor == NULL)
+			  {
+				printf("LADSPA error: unable to find lable \"%s\" in plugin.\n", pcPluginLabel);
+				return 0;
+			  }
+			if (strcmp(psDescriptor->Label, pcPluginLabel) == 0)
+			  {
+				printf("LADSPA: activating plugin \"%s\"\n", pcPluginLabel);
+				pPlugin = psDescriptor->instantiate(psDescriptor, srate);
+				connectPorts();
+				pluginActivated = true;
+				return 1;
+			  }
+		  }
 	  }
-	if (strcmp(psDescriptor->Label, pcPluginLabel) == 0)
-	  {
-	    printf("LADSPA: Activating plugin \"%s\"\n", pcPluginLabel);
-	    pPlugin = psDescriptor->instantiate(psDescriptor, srate);
-	    connectPorts();
-	    return 1;
-	  }
-      }
-    return 0;
+	else
+	  printf ("LADSPA error: no plugin loaded yet!\n");
+	return 0;
   }
 
   int LADSPA_load ( Chuck_String * p)
   {
+    if (pluginActivated)
+	  {
+		psDescriptor->cleanup(pPlugin);
+		printf("LADSPA: deactivating current plugin...\n");
+	  }
+    if (pluginLoaded)
+	  {
+		dlclose(pvPluginHandle);
+		printf("LADSPA: unloading current plugin...\n");
+	  }
+	pluginActivated = false;
+	pluginLoaded = false;
     const char * pcPluginFilename = p->str.c_str();
-    printf("Loading LADSPA plugin %s\n", pcPluginFilename);
+    printf("LADSPA: loading plugin %s\n", pcPluginFilename);
     pvPluginHandle = dlopen(pcPluginFilename, RTLD_NOW);
     dlerror();
     
@@ -147,107 +180,116 @@ public:
       {
 		const char * pcError = dlerror();
 		if (pcError) 
-		  printf("Unable to find ladspa_descriptor() function in plugin file "
+		  printf("LADSPA error: unable to find ladspa_descriptor() function in plugin file "
 				 "\"%s\"\n"
 				 "Are you sure this is a LADSPA plugin file?\n", 
 				 pcPluginFilename);
 		return 0;
       }
-	//LADSPA_list();
-    //printf ("Valid LADSPA file found!\n");
+	pluginLoaded = true;
 	return 1;
   }
 
   // TODO: error checking  
   int LADSPA_list ()
   {
-    printf ("Plugins available under this LADSPA file:\n");
-    for (int i = 0;; i++)
-      {
-		
-		psDescriptor = pfDescriptorFunction(i);
-		if (!psDescriptor)
-		  break;
-		
-	putchar('\n');
-	
-	printf("Plugin Label: \"%s\"\n", psDescriptor->Label);
-	printf("Plugin Name: \"%s\"\n", psDescriptor->Name);
-      }
-    printf("--------------------------------------------------\n");
-	//putchar('\n');
-	
-    return 1;
-  }		
+	if (pluginLoaded)
+	  {
+		printf ("Plugins available under this LADSPA file:\n");
+		for (int i = 0;; i++)
+		  {
+			psDescriptor = pfDescriptorFunction(i);
+			if (!psDescriptor)
+			  break;
+			putchar('\n');
+			printf("Plugin Label: \"%s\"\n", psDescriptor->Label);
+			printf("Plugin Name: \"%s\"\n", psDescriptor->Name);
+		  }
+		printf("--------------------------------------------------\n");
+		return 1;
+	  }
+	else
+	  printf ("LADSPA error: no plugin loaded yet!\n");
+  }
 
-  // TODO: error checking  
 int LADSPA_info ()
   {
-  int bFound;
-  int knum;
-  unsigned long lIndex;
-  LADSPA_PortRangeHintDescriptor iHintDescriptor;
-  LADSPA_Data fBound;
-  printf("--------------------------------------------------\n");	
-  printf(
-	  "Plugin \"%s\" has the following control inputs:\n",
-	  psDescriptor->Name);
-
-  knum = 0;
-  bFound = 0;
-  for (lIndex = 0; lIndex < psDescriptor->PortCount; lIndex++)
-    {
-      if (LADSPA_IS_PORT_CONTROL(psDescriptor->PortDescriptors[lIndex]))
-		{
-		  if (LADSPA_IS_PORT_INPUT(psDescriptor->PortDescriptors[lIndex]))
-			{
-			  printf("\tControl %d: %s", knum++, psDescriptor->PortNames[lIndex]);
-			  bFound = 1;
-			  iHintDescriptor = psDescriptor->PortRangeHints[lIndex].HintDescriptor;
-			  if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor)
-				  || LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor))
-				{
-				  printf( " (");
-				  if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor))
-					{
-					  fBound = psDescriptor->PortRangeHints[lIndex].LowerBound;
-					  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor))
-						{
-						  if (fBound == 0) printf( "0");
-						  else printf( "%g * sample rate", fBound);
-						}
-					  else printf( "%g", fBound);
-					}
-				  else
-					printf( "...");
-				  printf( " to ");
-				  if (LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor))
-					{
-					  fBound = psDescriptor->PortRangeHints[lIndex].UpperBound;
-					  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor))
-						{
-						  if (fBound == 0)
-							printf( "0");
-						  else
-							printf( "%g * sample rate", fBound);
-						}
-					  else
-						printf( "%g", fBound);
-					}
-				  else
-					printf( "...");
-				  printf( "), default: %.1f\n", get_default(lIndex));
-				}
-			  else printf("\n");
-			}
-		  else
-			printf("\tOutput %d: %s\n",knum++, psDescriptor->PortNames[lIndex]);
-		}
-    }
-  
-  if (!bFound)
-    printf( "\tnone\n");
-  printf("--------------------------------------------------\n");
+	if (pluginActivated)
+	  {
+		bool bFound;
+		int knum;
+		unsigned long lIndex;
+		LADSPA_PortRangeHintDescriptor iHintDescriptor;
+		LADSPA_Data fBound;
+		printf("--------------------------------------------------\n");	
+		printf(
+			   "Plugin \"%s\" has the following control inputs:\n",
+			   psDescriptor->Name);
+		
+		knum = 0;
+		bFound = false;
+		for (lIndex = 0; lIndex < psDescriptor->PortCount; lIndex++)
+		  {
+			if (LADSPA_IS_PORT_CONTROL(psDescriptor->PortDescriptors[lIndex]))
+			  {
+				if (LADSPA_IS_PORT_INPUT(psDescriptor->PortDescriptors[lIndex]))
+				  {
+					printf("\tControl %d: %s", knum++, psDescriptor->PortNames[lIndex]);
+					bFound = true;
+					iHintDescriptor = psDescriptor->PortRangeHints[lIndex].HintDescriptor;
+					if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor)
+						|| LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor))
+					  {
+						printf( " (");
+						if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor))
+						  {
+							fBound = psDescriptor->PortRangeHints[lIndex].LowerBound;
+							if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor))
+							  {
+								if (fBound == 0) printf( "0");
+								else printf( "%g * sample rate", fBound);
+							  }
+							else printf( "%g", fBound);
+						  }
+						else
+						  printf( "...");
+						printf( " to ");
+						if (LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor))
+						  {
+							fBound = psDescriptor->PortRangeHints[lIndex].UpperBound;
+							if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor))
+							  {
+								if (fBound == 0)
+								  printf( "0");
+								else
+								  printf( "%g * sample rate", fBound);
+							  }
+							else
+							  printf( "%g", fBound);
+						  }
+						else
+						  printf( "...");
+						printf( "), default: %.1f\n", get_default(lIndex));
+					  }
+					else printf("\n");
+				  }
+				else
+				  {
+					printf("\tOutput %d: %s\n",knum++, psDescriptor->PortNames[lIndex]);
+					bFound = true;
+				  }
+			  }
+		  }
+		
+		if (!bFound)
+		  printf( "\tnone\n");
+		printf("--------------------------------------------------\n");
+	  }
+	else
+	  if (!pluginLoaded)
+		printf ("LADSPA error: no plugin loaded yet!\n");
+	  else
+		printf ("LADSPA error: plugin not yet activated\n");
   }
 
 private:
@@ -331,7 +373,7 @@ private:
 		//printf("  Activating plugin...\n");
 		psDescriptor->activate(pPlugin);
 		//printf("  Activated!\n");
-		pluginLoaded = true;
+		pluginActivated = true;
 	  }
   }
 
@@ -447,11 +489,9 @@ private:
   LADSPA_Data fDefault;
   LADSPA_Handle pPlugin;
   LADSPA_Data ** inbuf, ** outbuf; // audio in and out buffers (multichannel)
-  //LADSPA_Data * kinbuf, * koutbuf; // control in and out buffers
-  //short * kinbufRef, * koutbufRef;
   ControlData * kbuf; // control data buffers
   void * pvPluginHandle;
-  bool pluginLoaded;
+  bool pluginLoaded, pluginActivated;
   int bufsize;
   unsigned short numchans;
   unsigned short kports, inports, outports;
