@@ -96,7 +96,7 @@ public:
 		if (param < kports)
 		  if (kbuf[param].porttype != INPUT)
 			{
-			  printf ( "LADSPA Error: selected param is output only.\n");
+			  printf ( "LADSPA error: selected param is output only.\n");
 			  return 0;
 			}
 		  else
@@ -107,9 +107,9 @@ public:
 			}
 		else
 		  if (kports>1)
-			printf ("LADSPA Error: param must be between 0 and %d.\n", kports-1);
+			printf ("LADSPA error: param must be between 0 and %d.\n", kports-1);
 		  else
-			printf ("LADSPA Error: param must be 0.\n");
+			printf ("LADSPA error: param must be 0.\n");
 	  }
 	return val;
   }
@@ -121,9 +121,9 @@ public:
 		if (param < kports)
 		  return kbuf[param].value;
 		if (kports>0)
-		  printf ("LADSPA Error: param must be between 0 and %d.\n", kports-1);
+		  printf ("LADSPA error: param must be between 0 and %d.\n", kports-1);
 		else
-		  printf ("LADSPA Error: param must be 0.\n");
+		  printf ("LADSPA error: param must be 0.\n");
 	  }
 	return 0;
   }
