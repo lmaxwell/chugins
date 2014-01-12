@@ -41,7 +41,7 @@ labelname => plugin.activate;
 
 // This shows the input and output ports for the plugin. The
 // audio ports are connected automatically. The control ports
-// are numbered from 0 up.
+// are numbered from 0.
 plugin.info();
 second => now;
 

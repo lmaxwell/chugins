@@ -103,7 +103,7 @@ public:
 			}
 		  else
 			{
-			  if (verbose) printf ("LADSA: setting parameter \"%s\" to %.2f\n",
+			  if (verbose) printf ("LADSA: setting parameter \"%s\" to %g\n",
 								   psDescriptor->PortNames[kbuf[param].ladspaIndex], val);
 			  kbuf[param].value = (LADSPA_Data)val;
 			}
@@ -278,7 +278,7 @@ int LADSPA_info ()
 						  }
 						else
 						  printf( "...");
-						printf( "), default: %.1f\n", get_default(lIndex));
+						printf( "), default: %g\n", get_default(lIndex));
 					  }
 					else printf("\n");
 				  }
