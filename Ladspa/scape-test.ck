@@ -9,5 +9,6 @@
 // Run with: chuck Scape.ck scape-test.ck
 
 adc => Scape scape => dac;
+scape.ladspa.info();
 120 => scape.bpm;
 minute => now;
