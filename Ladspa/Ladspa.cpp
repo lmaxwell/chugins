@@ -198,49 +198,51 @@ int LADSPA_info ()
   for (lIndex = 0; lIndex < psDescriptor->PortCount; lIndex++)
     {
       if (LADSPA_IS_PORT_CONTROL(psDescriptor->PortDescriptors[lIndex]))
-	{
-	  if (LADSPA_IS_PORT_INPUT(psDescriptor->PortDescriptors[lIndex]))
-	    {
-	      printf("\tControl %d: %s", knum++, psDescriptor->PortNames[lIndex]);
-	      bFound = 1;
-	      iHintDescriptor = psDescriptor->PortRangeHints[lIndex].HintDescriptor;
-	      if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor)
-		  || LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor))
 		{
-		  printf( " (");
-		  if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor))
-		    {
-		      fBound = psDescriptor->PortRangeHints[lIndex].LowerBound;
-		      if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor))
+		  if (LADSPA_IS_PORT_INPUT(psDescriptor->PortDescriptors[lIndex]))
 			{
-			  if (fBound == 0) printf( "0");
-			  else printf( "%g * sample rate", fBound);
+			  printf("\tControl %d: %s", knum++, psDescriptor->PortNames[lIndex]);
+			  bFound = 1;
+			  iHintDescriptor = psDescriptor->PortRangeHints[lIndex].HintDescriptor;
+			  if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor)
+				  || LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor))
+				{
+				  printf( " (");
+				  if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor))
+					{
+					  fBound = psDescriptor->PortRangeHints[lIndex].LowerBound;
+					  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor))
+						{
+						  if (fBound == 0) printf( "0");
+						  else printf( "%g * sample rate", fBound);
+						}
+					  else printf( "%g", fBound);
+					}
+				  else
+					printf( "...");
+				  printf( " to ");
+				  if (LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor))
+					{
+					  fBound = psDescriptor->PortRangeHints[lIndex].UpperBound;
+					  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor))
+						{
+						  if (fBound == 0)
+							printf( "0");
+						  else
+							printf( "%g * sample rate", fBound);
+						}
+					  else
+						printf( "%g", fBound);
+					}
+				  else
+					printf( "...");
+				  printf( "), default: %.1f\n", get_default(lIndex));
+				}
+			  else printf("\n");
 			}
-		      else printf( "%g", fBound);
-		    }
 		  else
-		    printf( "...");
-		  printf( " to ");
-		  if (LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor)) {
-		    fBound = psDescriptor->PortRangeHints[lIndex].UpperBound;
-		    if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor)) {
-		      if (fBound == 0)
-			printf( "0");
-		      else
-			printf( "%g * sample rate", fBound);
-		    }
-		    else
-		      printf( "%g", fBound);
-		  }
-		  else
-		    printf( "...");
-		  printf( "), default: %.1f\n", get_default(iHintDescriptor));
+			printf("\tOutput %d: %s\n",knum++, psDescriptor->PortNames[lIndex]);
 		}
-	      else printf("\n");
-	    }
-	  else
-	    printf("\tOutput %d: %s\n",knum++, psDescriptor->PortNames[lIndex]);
-	}
     }
   
   if (!bFound)
