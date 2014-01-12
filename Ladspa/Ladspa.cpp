@@ -35,6 +35,13 @@ CK_DLL_TICKF(ladspa_tick);
 // this is a special offset reserved for Chugin internal data
 t_CKINT ladspa_data_offset = 0;
 
+struct ControlData
+{
+  unsigned short chuckIndex;
+  unsigned short ladspaIndex;
+  LADSPA_Data value;
+};
+
 // class definition for internal Chugin data
 // (note: this isn't strictly necessary, but serves as example
 // of one recommended approach)
@@ -446,11 +453,12 @@ private:
   LADSPA_Data ** inbuf, ** outbuf; // audio in and out buffers (multichannel)
   LADSPA_Data * kinbuf, * koutbuf; // control in and out buffers
   short * kinbufRef, * koutbufRef;
+  ControlData * kbuf;
   void * pvPluginHandle;
   bool pluginLoaded;
   int bufsize;
-  int numchans;
-  int kinports, koutports, inports, outports;
+  unsigned short numchans;
+  unsigned short kinports, koutports, inports, outports;
   float srate;
 };
 
