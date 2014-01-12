@@ -35,11 +35,13 @@ CK_DLL_TICKF(ladspa_tick);
 // this is a special offset reserved for Chugin internal data
 t_CKINT ladspa_data_offset = 0;
 
+enum port_t { INPUT, OUTPUT };
+
 struct ControlData
 {
-  unsigned short chuckIndex;
   unsigned short ladspaIndex;
   LADSPA_Data value;
+  port_t porttype;
 };
 
 // class definition for internal Chugin data
@@ -79,35 +81,36 @@ public:
 
   float set( float val, int param)
   {
-	//int param = (int)fparam;
-	if (param < kinports)
-	  {
-		printf ("LADSA: setting parameter \"%s\" to %f\n",
-				psDescriptor->PortNames[kinbufRef[param]], val);
-		kinbuf[param] = (LADSPA_Data)val;
-	  }
-	else
-	  if (kinports>1)
-		printf ("LADSPA Error: param must be between 0 and %d.\n", kinports-1);
-	  else
-		printf ("LADSPA Error: param must be 0.\n");
-  	return val;
+    //int param = (int)fparam;
+    if (param < kports)
+      if (kbuf[param].porttype != INPUT)
+	{
+	  printf ( "LADSPA Error: selected param is output only.\n");
+	  return 0;
+	}
+      else
+	{
+	  printf ("LADSA: setting parameter \"%s\" to %.2f\n",
+		  psDescriptor->PortNames[kbuf[param].ladspaIndex], val);
+	  kbuf[param].value = (LADSPA_Data)val;
+	}
+    else
+      if (kports>1)
+	printf ("LADSPA Error: param must be between 0 and %d.\n", kports-1);
+      else
+	printf ("LADSPA Error: param must be 0.\n");
+    return val;
   }
-
+  
   float get (int param)
   {
-	if (koutports == 0)
-	  {
-		printf ("LADSPA Error: plugin has no control output ports.\n");
-		return 0;
-	  }	
-	if (param < koutports)
-	  return koutbuf[param];
-	if (koutports>0)
-	  printf ("LADSPA Error: param must be between 0 and %d.\n", koutports-1);
-	else
-	  printf ("LADSPA Error: param must be 0.\n");
-	return 0;
+    if (param < kports)
+      return kbuf[param].value;
+    if (kports>0)
+      printf ("LADSPA Error: param must be between 0 and %d.\n", kports-1);
+    else
+      printf ("LADSPA Error: param must be 0.\n");
+    return 0;
   }
   
   int choosePlugin ( Chuck_String *p)
@@ -193,49 +196,53 @@ int LADSPA_info ()
   knum = 0;
   bFound = 0;
   for (lIndex = 0; lIndex < psDescriptor->PortCount; lIndex++)
-    if (LADSPA_IS_PORT_INPUT(psDescriptor->PortDescriptors[lIndex])
-	&& LADSPA_IS_PORT_CONTROL(psDescriptor->PortDescriptors[lIndex])) {
-      printf(
-	      "\tControl %d: %s",
-	      knum++, psDescriptor->PortNames[lIndex]);
-      bFound = 1;
-      iHintDescriptor = psDescriptor->PortRangeHints[lIndex].HintDescriptor;
-      if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor)
-	  || LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor)) {
-	printf( " (");
-	if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor)) {
-	  fBound = psDescriptor->PortRangeHints[lIndex].LowerBound;
-	  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor)) {
-	    if (fBound == 0)
-	      printf( "0");
-	    else
-	      printf( "%g * sample rate", fBound);
-	  }
+    {
+      if (LADSPA_IS_PORT_CONTROL(psDescriptor->PortDescriptors[lIndex]))
+	{
+	  if (LADSPA_IS_PORT_INPUT(psDescriptor->PortDescriptors[lIndex]))
+	    {
+	      printf("\tControl %d: %s", knum++, psDescriptor->PortNames[lIndex]);
+	      bFound = 1;
+	      iHintDescriptor = psDescriptor->PortRangeHints[lIndex].HintDescriptor;
+	      if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor)
+		  || LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor))
+		{
+		  printf( " (");
+		  if (LADSPA_IS_HINT_BOUNDED_BELOW(iHintDescriptor))
+		    {
+		      fBound = psDescriptor->PortRangeHints[lIndex].LowerBound;
+		      if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor))
+			{
+			  if (fBound == 0) printf( "0");
+			  else printf( "%g * sample rate", fBound);
+			}
+		      else printf( "%g", fBound);
+		    }
+		  else
+		    printf( "...");
+		  printf( " to ");
+		  if (LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor)) {
+		    fBound = psDescriptor->PortRangeHints[lIndex].UpperBound;
+		    if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor)) {
+		      if (fBound == 0)
+			printf( "0");
+		      else
+			printf( "%g * sample rate", fBound);
+		    }
+		    else
+		      printf( "%g", fBound);
+		  }
+		  else
+		    printf( "...");
+		  printf( "), default: %.1f\n", get_default(iHintDescriptor));
+		}
+	      else printf("\n");
+	    }
 	  else
-	    printf( "%g", fBound);
+	    printf("\tOutput %d: %s\n",knum++, psDescriptor->PortNames[lIndex]);
 	}
-	else
-	  printf( "...");
-	printf( " to ");
-	if (LADSPA_IS_HINT_BOUNDED_ABOVE(iHintDescriptor)) {
-	  fBound = psDescriptor->PortRangeHints[lIndex].UpperBound;
-	  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor)) {
-	    if (fBound == 0)
-	      printf( "0");
-	    else
-	      printf( "%g * sample rate", fBound);
-	  }
-	  else
-	    printf( "%g", fBound);
-	}
-	else
-	  printf( "...");
-	printf( ")\n");
-      }
-      else
-	printf( "\n");
     }
-      
+  
   if (!bFound)
     printf( "\tnone\n");
   printf("--------------------------------------------------\n");
@@ -249,32 +256,27 @@ private:
     //printf("Connecting LADSPA audio ports...\n\n");
 
     // Count ports
-    kinports = 0;
-    koutports = 0;
-    inports = 0;
-    outports = 0;
-	
+    inports = 0; // audio in
+    outports = 0; // audio out
+    kports = 0; // control data (in and out)
+
     for (int i=0; i<psDescriptor->PortCount; i++)
       {
-		iPortDescriptor = psDescriptor->PortDescriptors[i];
-		if (LADSPA_IS_PORT_AUDIO(iPortDescriptor))
-		  {
-			if (LADSPA_IS_PORT_INPUT(iPortDescriptor)) inports++;
-			else if (LADSPA_IS_PORT_OUTPUT(iPortDescriptor)) outports++;
-		  }
-		else if (LADSPA_IS_PORT_CONTROL(iPortDescriptor))
-		  {
-			if (LADSPA_IS_PORT_INPUT(iPortDescriptor)) kinports++;
-			else if (LADSPA_IS_PORT_OUTPUT(iPortDescriptor)) koutports++;
-		  }
+	iPortDescriptor = psDescriptor->PortDescriptors[i];
+	if (LADSPA_IS_PORT_AUDIO(iPortDescriptor))
+	  {
+	    if (LADSPA_IS_PORT_INPUT(iPortDescriptor)) inports++;
+	    else if (LADSPA_IS_PORT_OUTPUT(iPortDescriptor)) outports++;
+	  }
+	else if (LADSPA_IS_PORT_CONTROL(iPortDescriptor))
+	  {
+	    kports++;
+	  }
       }
-	
+    
     inbuf = (LADSPA_Data **)malloc(sizeof(LADSPA_Data *)*inports);
     outbuf = (LADSPA_Data **)malloc(sizeof(LADSPA_Data *)*outports);
-    kinbuf = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*kinports);
-    koutbuf = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*koutports);
-    kinbufRef = (short *)malloc(sizeof(short)*inports);
-    koutbufRef = (short *)malloc(sizeof(short)*outports);
+    kbuf = (ControlData *)malloc(sizeof(ControlData) * kports);
     for (int i=0; i<inports; i++)
       {
 		inbuf[i] = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*bufsize);
@@ -283,51 +285,43 @@ private:
       {
 		outbuf[i] = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*bufsize);
       }
-	for (int i=0; i<kinports; i++)
-	  {
-		kinbuf[i] = 0.0;
-		kinbufRef[i] = 0;
-	  }
-	for (int i=0; i<koutports; i++)
-	  {
-		koutbuf[i] = 0.0;
-		koutbufRef[i] = 0;
-	  }
+    for (int i=0; i<kports; i++)
+      {
+	kbuf[i].value = 0.0;
+	kbuf[i].ladspaIndex = 0;
+	kbuf[i].porttype = INPUT;
+      }
 	
-    //printf("Kinports: %d, Koutputs: %d, Audio inports: %d, outports: %d\n",
-	//kinports, koutports, inports, outports);
-	
+    printf("Audio inports: %d, outports: %d, Control ports: %d\n",inports, outports, kports);
+    
     int inbufIndex = 0;
     int outbufIndex = 0;
-    int kinbufIndex = 0;
-    int koutbufIndex = 0;
-	
+    int kbufIndex = 0;
+
     // connect ports
     for (int i=0; i<psDescriptor->PortCount; i++)
       {
-		iPortDescriptor = psDescriptor->PortDescriptors[i];
-		if (LADSPA_IS_PORT_AUDIO(iPortDescriptor))
-		  {
-			if (LADSPA_IS_PORT_INPUT(iPortDescriptor))
-			  psDescriptor->connect_port(pPlugin, i, inbuf[inbufIndex++]);
-			else if (LADSPA_IS_PORT_OUTPUT(iPortDescriptor))
-			  psDescriptor->connect_port(pPlugin, i, outbuf[outbufIndex++]);
-		  }
-		else if (LADSPA_IS_PORT_CONTROL(iPortDescriptor))
-		  {
-			if (LADSPA_IS_PORT_INPUT(iPortDescriptor))
-			  {
-				psDescriptor->connect_port(pPlugin, i, &kinbuf[kinbufIndex]);
-				LADSPA_Data portDefault = get_default( i );
-				kinbuf[kinbufIndex] = portDefault;
-				kinbufRef[kinbufIndex++] = i;
-			  }
-			else if (LADSPA_IS_PORT_OUTPUT(iPortDescriptor))
-			  {
-				psDescriptor->connect_port(pPlugin, i, &koutbuf[koutbufIndex]);
-				koutbufRef[koutbufIndex++] = i;
-			  }
-		  }
+	iPortDescriptor = psDescriptor->PortDescriptors[i];
+	if (LADSPA_IS_PORT_AUDIO(iPortDescriptor))
+	  {
+	    if (LADSPA_IS_PORT_INPUT(iPortDescriptor))
+	      psDescriptor->connect_port(pPlugin, i, inbuf[inbufIndex++]);
+	    else if (LADSPA_IS_PORT_OUTPUT(iPortDescriptor))
+	      psDescriptor->connect_port(pPlugin, i, outbuf[outbufIndex++]);
+	  }
+	else if (LADSPA_IS_PORT_CONTROL(iPortDescriptor))
+	  {
+	    psDescriptor->connect_port(pPlugin, i, &kbuf[kbufIndex].value);
+	    kbuf[kbufIndex].ladspaIndex = i;
+	    if (LADSPA_IS_PORT_INPUT (iPortDescriptor))
+	      {
+		kbuf[kbufIndex].porttype = INPUT;
+		LADSPA_Data portDefault = get_default(i);
+		kbuf[kbufIndex].value = portDefault;
+	      }
+	    else kbuf[kbufIndex].porttype = OUTPUT;
+	    kbufIndex++;
+	  }
       }
 	
 	if (psDescriptor->activate != NULL)
@@ -451,14 +445,14 @@ private:
   LADSPA_Data fDefault;
   LADSPA_Handle pPlugin;
   LADSPA_Data ** inbuf, ** outbuf; // audio in and out buffers (multichannel)
-  LADSPA_Data * kinbuf, * koutbuf; // control in and out buffers
-  short * kinbufRef, * koutbufRef;
-  ControlData * kbuf;
+  //LADSPA_Data * kinbuf, * koutbuf; // control in and out buffers
+  //short * kinbufRef, * koutbufRef;
+  ControlData * kbuf; // control data buffers
   void * pvPluginHandle;
   bool pluginLoaded;
   int bufsize;
   unsigned short numchans;
-  unsigned short kinports, koutports, inports, outports;
+  unsigned short kports, inports, outports;
   float srate;
 };
 
