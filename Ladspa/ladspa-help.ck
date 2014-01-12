@@ -13,8 +13,9 @@
 // info (): list the input and output ports for plugins
 // activate (string): activate plugin based on label name
 // set (int, float): set the nth parameter to a new value
+// verbose (int): turn on/off notifications about plugin (default: 1)
 
-"./filter.ladspa" => string plugname;
+"/usr/lib/ladspa/filter.so" => string plugname;
 "lpf" => string labelname;
 if (me.args()>0) me.arg(0) => plugname;
 if (me.args()>1) me.arg(1) => labelname;

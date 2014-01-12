@@ -28,6 +28,7 @@ CK_DLL_MFUN(ladspa_info);
 CK_DLL_MFUN(ladspa_label);
 CK_DLL_MFUN(ladspa_set);
 CK_DLL_MFUN(ladspa_get);
+CK_DLL_MFUN(ladspa_verbose);
 
 // for Chugins extending UGen, this is mono synthesis function for 1 sample
 CK_DLL_TICKF(ladspa_tick);
@@ -58,6 +59,7 @@ public:
     pPlugin = (LADSPA_Handle *)malloc(sizeof(LADSPA_Handle));
     pluginLoaded = false;
 	pluginActivated = false;
+	verbose = true;
     srate = fs;
     bufsize = DEFAULT_BUFSIZE;
   }
@@ -69,7 +71,7 @@ public:
     if (pluginLoaded)
 	  {
 		dlclose(pvPluginHandle);
-		printf("LADSPA: closed plugin\n");
+		if (verbose) printf("LADSPA: closed plugin\n");
 	  }
   }
   
@@ -101,8 +103,8 @@ public:
 			}
 		  else
 			{
-			  printf ("LADSA: setting parameter \"%s\" to %.2f\n",
-					  psDescriptor->PortNames[kbuf[param].ladspaIndex], val);
+			  if (verbose) printf ("LADSA: setting parameter \"%s\" to %.2f\n",
+								   psDescriptor->PortNames[kbuf[param].ladspaIndex], val);
 			  kbuf[param].value = (LADSPA_Data)val;
 			}
 		else
@@ -127,6 +129,13 @@ public:
 	  }
 	return 0;
   }
+
+  int LADSPAverbose (int val)
+  {
+	if (val) verbose = true;
+	else verbose = false;
+	return val;
+  }
   
   int choosePlugin ( Chuck_String *p)
   {
@@ -143,7 +152,7 @@ public:
 			  }
 			if (strcmp(psDescriptor->Label, pcPluginLabel) == 0)
 			  {
-				printf("LADSPA: activating plugin \"%s\"\n", pcPluginLabel);
+				if (verbose) printf("LADSPA: activating plugin \"%s\"\n", pcPluginLabel);
 				pPlugin = psDescriptor->instantiate(psDescriptor, srate);
 				connectPorts();
 				pluginActivated = true;
@@ -161,17 +170,17 @@ public:
     if (pluginActivated)
 	  {
 		psDescriptor->cleanup(pPlugin);
-		printf("LADSPA: deactivating current plugin...\n");
+		if (verbose) printf("LADSPA: deactivating current plugin...\n");
 	  }
     if (pluginLoaded)
 	  {
 		dlclose(pvPluginHandle);
-		printf("LADSPA: unloading current plugin...\n");
+		if (verbose) printf("LADSPA: unloading current plugin...\n");
 	  }
 	pluginActivated = false;
 	pluginLoaded = false;
     const char * pcPluginFilename = p->str.c_str();
-    printf("LADSPA: loading plugin %s\n", pcPluginFilename);
+    if (verbose) printf("LADSPA: loading plugin %s\n", pcPluginFilename);
     pvPluginHandle = dlopen(pcPluginFilename, RTLD_NOW);
     dlerror();
     
@@ -336,7 +345,7 @@ private:
 	kbuf[i].porttype = INPUT;
       }
 	
-    printf("Audio inports: %d, outports: %d, Control ports: %d\n",inports, outports, kports);
+    //printf("Audio inports: %d, outports: %d, Control ports: %d\n",inports, outports, kports);
     
     int inbufIndex = 0;
     int outbufIndex = 0;
@@ -370,9 +379,7 @@ private:
 	
 	if (psDescriptor->activate != NULL)
 	  {
-		//printf("  Activating plugin...\n");
 		psDescriptor->activate(pPlugin);
-		//printf("  Activated!\n");
 		pluginActivated = true;
 	  }
   }
@@ -385,10 +392,6 @@ private:
 	  break;
 	case LADSPA_HINT_DEFAULT_MINIMUM:
 	  fDefault = psDescriptor->PortRangeHints[index].LowerBound;
-	  /*if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
-		printf(", default %g*srate", fDefault);
-	  else 
-	  printf(", default %g", fDefault);*/
 	  break;
 	case LADSPA_HINT_DEFAULT_LOW:
 	  if (LADSPA_IS_HINT_LOGARITHMIC(iHintDescriptor)) {
@@ -405,11 +408,6 @@ private:
 			 + psDescriptor->PortRangeHints[index].UpperBound
 			 * 0.25);
 	  }
-	  /*
-	  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
-		printf(", default %g*srate", fDefault);
-	  else 
-	  printf(", default %g", fDefault);*/
 	  break;
 	case LADSPA_HINT_DEFAULT_MIDDLE:
 	  if (LADSPA_IS_HINT_LOGARITHMIC(iHintDescriptor)) {
@@ -422,11 +420,6 @@ private:
 		  = 0.5 * (psDescriptor->PortRangeHints[index].LowerBound
 				   + psDescriptor->PortRangeHints[index].UpperBound);
 	  }
-	  /*
-	  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
-		printf(", default %g*srate", fDefault);
-	  else 
-	  printf(", default %g", fDefault);*/
 	  break;
 	case LADSPA_HINT_DEFAULT_HIGH:
 	  if (LADSPA_IS_HINT_LOGARITHMIC(iHintDescriptor)) {
@@ -443,38 +436,25 @@ private:
 			 + psDescriptor->PortRangeHints[index].UpperBound
 			 * 0.75);
 	  }
-	  /*
-	  if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
-		printf(", default %g*srate", fDefault);
-	  else 
-	  printf(", default %g", fDefault);*/
 	  break;
 	case LADSPA_HINT_DEFAULT_MAXIMUM:
 	  fDefault = psDescriptor->PortRangeHints[index].UpperBound;
-	  /*if (LADSPA_IS_HINT_SAMPLE_RATE(iHintDescriptor) && fDefault != 0) 
-		printf(", default %g*srate", fDefault);
-	  else 
-	  printf(", default %g", fDefault);*/
 	  break;
 	case LADSPA_HINT_DEFAULT_0:
-	  //printf(", default 0");
 	  fDefault = 0;
 	  break;
 	case LADSPA_HINT_DEFAULT_1:
-	  //printf(", default 1");
 	  fDefault = 1;
 	  break;
 	case LADSPA_HINT_DEFAULT_100:
-	  //printf(", default 100");
 	  fDefault = 100;
 	  break;
 	case LADSPA_HINT_DEFAULT_440:
-	  //printf(", default 440");
 	  fDefault = 440;
 	  break;
 	default:
 	  printf("LADSPA warning: UNKNOWN DEFAULT CODE\n");
-	  /* (Not necessarily an error - may be a newer version.) */
+	  // (Not necessarily an error - may be a newer version.)
 	  break;
 	}
 	return fDefault;
@@ -492,6 +472,7 @@ private:
   ControlData * kbuf; // control data buffers
   void * pvPluginHandle;
   bool pluginLoaded, pluginActivated;
+  bool verbose;
   int bufsize;
   unsigned short numchans;
   unsigned short kports, inports, outports;
@@ -548,6 +529,10 @@ CK_DLL_QUERY( Ladspa )
 
   // example of adding setter method
   QUERY->add_mfun(QUERY, ladspa_list, "int", "list");
+
+  // example of adding setter method
+  QUERY->add_mfun(QUERY, ladspa_verbose, "int", "verbose");
+  QUERY->add_arg(QUERY, "int", "val");
   
   // this reserves a variable in the ChucK internal class to store 
   // referene to the c++ class we defined above
@@ -662,4 +647,13 @@ CK_DLL_MFUN(ladspa_get)
   t_CKINT param = GET_NEXT_INT(ARGS);
 
   RETURN->v_float = bcdata->get(param);
+}
+
+// example implementation for setter
+CK_DLL_MFUN(ladspa_verbose)
+{
+  // get our c++ class pointer
+  Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
+  // set the return value
+  RETURN->v_int = bcdata->LADSPAverbose(GET_NEXT_INT(ARGS));
 }
