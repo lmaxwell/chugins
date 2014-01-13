@@ -6,10 +6,14 @@
 // this should align with the correct versions of these ChucK files
 #include "chuck_dl.h"
 #include "chuck_def.h"
+#include "Sigmund.h"
 
 // general includes
 #include <stdio.h>
 #include <limits.h>
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
 
 // declaration of chugin constructor
 CK_DLL_CTOR(sigmund_ctor);
@@ -26,6 +30,21 @@ CK_DLL_TICK(sigmund_tick);
 // this is a special offset reserved for Chugin internal data
 t_CKINT sigmund_data_offset = 0;
 
+extern "C"
+{
+  extern void mayer_fft(int n, t_sample *real, t_sample *imag);
+  extern void mayer_realfft(int n, t_sample *real);
+  void sigmund_getrawpeaks(int npts, t_float *insamps,
+			   int npeak, t_peak *peakv, int *nfound, t_float *power, t_float srate, int loud,
+			   t_float hifreq);
+  void sigmund_getpitch(int npeak, t_peak *peakv, t_float *freqp,
+			t_float npts, t_float srate, t_float nharmonics, t_float amppower, int loud);
+  void notefinder_doit(t_notefinder *x, t_float freq, t_float power,
+		       t_float *note, t_float vibrato, int stableperiod, t_float powerthresh,
+		       t_float growththresh, int loud);
+  void sigmund_peaktrack(int ninpeak, t_peak *inpeakv, 
+			 int noutpeak, t_peak *outpeakv, int loud);
+} 
 
 // class definition for internal Chugin data
 // (note: this isn't strictly necessary, but serves as example
@@ -33,32 +52,86 @@ t_CKINT sigmund_data_offset = 0;
 class Sigmund
 {
 public:
-    // constructor
-    Sigmund( t_CKFLOAT fs)
-    {
-        m_param = 0;
-    }
-
-    // for Chugins extending UGen
-    SAMPLE tick( SAMPLE in )
-    {
-        // default: this passes whatever input is patched into Chugin
-        return in;
-    }
-
-    // set parameter example
-    float setParam( t_CKFLOAT p )
-    {
-        m_param = p;
-        return p;
-    }
-
-    // get parameter example
-    float getParam() { return m_param; }
+  // constructor
+  Sigmund( t_CKFLOAT fs)
+  {
+    m_param = 0;
+    x = (t_sigmund*)malloc(sizeof(t_sigmund));
+    x->x_npts = NPOINTS_DEF;
+    x->x_param1 = 6;
+    x->x_param2 = 0.5;
+    x->x_param3 = 0;
+    x->x_hop = HOP_DEF;
+    x->x_mode = MODE_STREAM;
+    x->x_npeak = NPEAK_DEF;
+    x->x_vibrato = VIBRATO_DEF;
+    x->x_stabletime = STABLETIME_DEF;
+    x->x_growth = GROWTH_DEF;
+    x->x_minpower = MINPOWER_DEF;
+    x->x_maxfreq = 1000000;
+    x->x_loud = 0;
+    x->x_sr = fs;
+    x->x_trackv = 0;
+    x->x_ntrack = 0;
+    x->x_dopitch = x->x_donote = x->x_dotracks = 0;
+    inbuf = (SAMPLE*)malloc(sizeof(SAMPLE)*x->x_npts);
+    for (int i=0; i<x->x_npts; i++)
+      inbuf[i] = 0;
+    inbufIndex = 0;
+  }
+  
+  ~Sigmund()
+  {
+    for (int i=0; i<x->x_npts; i++)
+      inbuf[i] = 0;
+    delete inbuf;
+    delete x;
+  }
     
+  // for Chugins extending UGen
+  SAMPLE tick ( SAMPLE in )
+  {
+    // default: this passes whatever input is patched into Chugin
+    // fill sample buffer
+    inbuf[inbufIndex++] = in;
+    if (inbufIndex >= x->x_npts)
+      {
+	inbufIndex = 0;
+	// THE MAGIC HAPPENS!!
+	t_peak *peakv = (t_peak *)alloca(sizeof(t_peak) * x->x_npeak);
+	int nfound, i, cnt;
+	t_float freq = 0, power, note = 0;
+	sigmund_getrawpeaks(x->x_npts, inbuf, x->x_npeak, peakv,
+			    &nfound, &power, x->x_sr, x->x_loud, x->x_maxfreq);
+	if (x->x_dopitch)
+	  sigmund_getpitch(nfound, peakv, &freq, x->x_npts, x->x_sr, 
+			   x->x_param1, x->x_param2, x->x_loud);
+	  if (x->x_donote)
+	  notefinder_doit(&x->x_notefinder, freq, power, &note, x->x_vibrato, 
+			  1 + x->x_stabletime * 0.001 * x->x_sr / (t_float)x->x_hop,
+			  exp(LOG10*0.1*(x->x_minpower - 100)), x->x_growth, x->x_loud);
+	if (x->x_dotracks)
+	  sigmund_peaktrack(nfound, peakv, x->x_ntrack, x->x_trackv, x->x_loud);
+      }
+    return in;
+  }
+  
+  // set parameter example
+  float setParam( t_CKFLOAT p )
+  {
+    m_param = p;
+    return p;
+  }
+  
+  // get parameter example
+  float getParam() { return m_param; }
+  
 private:
-    // instance data
-    float m_param;
+  // instance data
+  float m_param;
+  t_sigmund *x;
+  SAMPLE* inbuf;
+  unsigned int inbufIndex;
 };
 
 
@@ -67,72 +140,72 @@ private:
 // add additional functions to this Chugin
 CK_DLL_QUERY( Sigmund )
 {
-    // hmm, don't change this...
-    QUERY->setname(QUERY, "Sigmund");
-    
-    // begin the class definition
-    // can change the second argument to extend a different ChucK class
-    QUERY->begin_class(QUERY, "Sigmund", "UGen");
-
-    // register the constructor (probably no need to change)
-    QUERY->add_ctor(QUERY, sigmund_ctor);
-    // register the destructor (probably no need to change)
-    QUERY->add_dtor(QUERY, sigmund_dtor);
-    
-    // for UGen's only: add tick function
-    QUERY->add_ugen_func(QUERY, sigmund_tick, NULL, 1, 1);
-    
-    // NOTE: if this is to be a UGen with more than 1 channel, 
-    // e.g., a multichannel UGen -- will need to use add_ugen_funcf()
-    // and declare a tickf function using CK_DLL_TICKF
-
-    // example of adding setter method
-    QUERY->add_mfun(QUERY, sigmund_setParam, "float", "param");
-    // example of adding argument to the above method
-    QUERY->add_arg(QUERY, "float", "arg");
-
-    // example of adding getter method
-    QUERY->add_mfun(QUERY, sigmund_getParam, "float", "param");
-    
-    // this reserves a variable in the ChucK internal class to store 
-    // referene to the c++ class we defined above
-    sigmund_data_offset = QUERY->add_mvar(QUERY, "int", "@s_data", false);
-
-    // end the class definition
-    // IMPORTANT: this MUST be called!
-    QUERY->end_class(QUERY);
-
-    // wasn't that a breeze?
-    return TRUE;
+  // hmm, don't change this...
+  QUERY->setname(QUERY, "Sigmund");
+  
+  // begin the class definition
+  // can change the second argument to extend a different ChucK class
+  QUERY->begin_class(QUERY, "Sigmund", "UGen");
+  
+  // register the constructor (probably no need to change)
+  QUERY->add_ctor(QUERY, sigmund_ctor);
+  // register the destructor (probably no need to change)
+  QUERY->add_dtor(QUERY, sigmund_dtor);
+  
+  // for UGen's only: add tick function
+  QUERY->add_ugen_func(QUERY, sigmund_tick, NULL, 1, 1);
+  
+  // NOTE: if this is to be a UGen with more than 1 channel, 
+  // e.g., a multichannel UGen -- will need to use add_ugen_funcf()
+  // and declare a tickf function using CK_DLL_TICKF
+  
+  // example of adding setter method
+  QUERY->add_mfun(QUERY, sigmund_setParam, "float", "param");
+  // example of adding argument to the above method
+  QUERY->add_arg(QUERY, "float", "arg");
+  
+  // example of adding getter method
+  QUERY->add_mfun(QUERY, sigmund_getParam, "float", "param");
+  
+  // this reserves a variable in the ChucK internal class to store 
+  // referene to the c++ class we defined above
+  sigmund_data_offset = QUERY->add_mvar(QUERY, "int", "@s_data", false);
+  
+  // end the class definition
+  // IMPORTANT: this MUST be called!
+  QUERY->end_class(QUERY);
+  
+  // wasn't that a breeze?
+  return TRUE;
 }
 
 
 // implementation for the constructor
 CK_DLL_CTOR(sigmund_ctor)
 {
-    // get the offset where we'll store our internal c++ class pointer
-    OBJ_MEMBER_INT(SELF, sigmund_data_offset) = 0;
-    
-    // instantiate our internal c++ class representation
-    Sigmund * bcdata = new Sigmund(API->vm->get_srate());
-    
-    // store the pointer in the ChucK object member
-    OBJ_MEMBER_INT(SELF, sigmund_data_offset) = (t_CKINT) bcdata;
+  // get the offset where we'll store our internal c++ class pointer
+  OBJ_MEMBER_INT(SELF, sigmund_data_offset) = 0;
+  
+  // instantiate our internal c++ class representation
+  Sigmund * bcdata = new Sigmund(API->vm->get_srate());
+  
+  // store the pointer in the ChucK object member
+  OBJ_MEMBER_INT(SELF, sigmund_data_offset) = (t_CKINT) bcdata;
 }
 
 
 // implementation for the destructor
 CK_DLL_DTOR(sigmund_dtor)
 {
-    // get our c++ class pointer
-    Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
-    // check it
-    if( bcdata )
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // check it
+  if( bcdata )
     {
-        // clean up
-        delete bcdata;
-        OBJ_MEMBER_INT(SELF, sigmund_data_offset) = 0;
-        bcdata = NULL;
+      // clean up
+      delete bcdata;
+      OBJ_MEMBER_INT(SELF, sigmund_data_offset) = 0;
+      bcdata = NULL;
     }
 }
 
@@ -140,32 +213,32 @@ CK_DLL_DTOR(sigmund_dtor)
 // implementation for tick function
 CK_DLL_TICK(sigmund_tick)
 {
-    // get our c++ class pointer
-    Sigmund * c = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
- 
-    // invoke our tick function; store in the magical out variable
-    if(c) *out = c->tick(in);
-
-    // yes
-    return TRUE;
+  // get our c++ class pointer
+  Sigmund * c = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  
+  // invoke our tick function; store in the magical out variable
+  if(c) *out = c->tick(in);
+  
+  // yes
+  return TRUE;
 }
 
 
 // example implementation for setter
 CK_DLL_MFUN(sigmund_setParam)
 {
-    // get our c++ class pointer
-    Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
-    // set the return value
-    RETURN->v_float = bcdata->setParam(GET_NEXT_FLOAT(ARGS));
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setParam(GET_NEXT_FLOAT(ARGS));
 }
 
 
 // example implementation for getter
 CK_DLL_MFUN(sigmund_getParam)
 {
-    // get our c++ class pointer
-    Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
-    // set the return value
-    RETURN->v_float = bcdata->getParam();
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->getParam();
 }
