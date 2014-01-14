@@ -9,11 +9,7 @@
 #include "Sigmund.h"
 
 // general includes
-#include <stdio.h>
-#include <limits.h>
 #include <math.h>
-#include <stdio.h>
-#include <string.h>
 
 // declaration of chugin constructor
 CK_DLL_CTOR(sigmund_ctor);
@@ -23,6 +19,7 @@ CK_DLL_DTOR(sigmund_dtor);
 // example of getter/setter
 //CK_DLL_MFUN(sigmund_setParam);
 CK_DLL_MFUN(sigmund_getFreq);
+CK_DLL_MFUN(sigmund_getPower);
 
 // for Chugins extending UGen, this is mono synthesis function for 1 sample
 CK_DLL_TICK(sigmund_tick);
@@ -78,6 +75,8 @@ public:
       inbuf[i] = 0;
     inbufIndex = 0;
     freq = 0;
+	power = 0;
+	note = 0;
   }
   
   ~Sigmund()
@@ -99,51 +98,52 @@ public:
 	// THE MAGIC HAPPENS!!
 	t_peak *peakv = (t_peak *)alloca(sizeof(t_peak) * npeak);
 	int nfound, i, cnt;
-	t_float power, note = 0;
 	sigmund_getrawpeaks(npts, inbuf, npeak, peakv,
 			    &nfound, &power, srate, loud, maxfreq);
 	if (dopitch)
 	  sigmund_getpitch(nfound, peakv, &freq, npts, srate, 
-			   param1, param2, loud);
-	  if (donote)
+					   param1, param2, loud);
+	if (donote)
 	  notefinder_doit(&notefinder, freq, power, &note, vibrato, 
-			  1 + stabletime * 0.001 * srate / (t_float)hop,
-			  exp(LOG10*0.1*(minpower - 100)), growth, loud);
+					  1 + stabletime * 0.001 * srate / (t_float)hop,
+					  exp(LOG10*0.1*(minpower - 100)), growth, loud);
 	if (dotracks)
 	  sigmund_peaktrack(nfound, peakv, ntrack, trackv, loud);
       }
-    return in;
+	return in;
   }
     
   // get parameter example
   float getFreq() { return freq; }
+
+  // get parameter example
+  float getPower() { return power; }
   
 private:
   // instance data
-  t_float srate;       /* sample rate */
-  int mode;         /* MODE_STREAM, etc. */
-  int npts;         /* number of points in analysis window */
-  int npeak;        /* number of peaks to find */
-  int loud;         /* debug level */
-  //t_sample *inbuf;  /* input buffer */
-  int infill;       /* number of points filled */
-  int countdown;    /* countdown to start filling buffer */
-  int hop;          /* samples between analyses */ 
-  t_float maxfreq;    /* highest-frequency peak to report */ 
-  t_float vibrato;    /* vibrato depth in half tones */ 
-  t_float stabletime; /* period of stability needed for note */ 
-  t_float growth;     /* growth to set off a new note */ 
-  t_float minpower;   /* minimum power, in DB, for a note */ 
-  t_float param1;     /* three parameters for temporary use */
+  t_float srate;       // sample rate 
+  int mode;         // MODE_STREAM, etc. 
+  int npts;         // number of points in analysis window 
+  int npeak;        // number of peaks to find 
+  int loud;         // debug level 
+  int infill;       // number of points filled 
+  int countdown;    // countdown to start filling buffer 
+  int hop;          // samples between analyses  
+  t_float maxfreq;    // highest-frequency peak to report  
+  t_float vibrato;    // vibrato depth in half tones  
+  t_float stabletime; // period of stability needed for note  
+  t_float growth;     // growth to set off a new note  
+  t_float minpower;   // minimum power, in DB, for a note  
+  t_float param1;     // three parameters for temporary use 
   t_float param2;
   t_float param3;
-  t_notefinder notefinder;  /* note parsing state */
-  t_peak *trackv;           /* peak tracking state */
-  int ntrack;               /* number of peaks tracked */
-  unsigned int dopitch:1;   /* which things to calculate */
+  t_notefinder notefinder;  // note parsing state 
+  t_peak *trackv;           // peak tracking state 
+  int ntrack;               // number of peaks tracked 
+  unsigned int dopitch:1;   // which things to calculate 
   unsigned int donote:1;
   unsigned int dotracks:1;
-  t_float freq;
+  t_float freq, power, note;
   SAMPLE* inbuf;
   unsigned int inbufIndex;
 };
@@ -180,6 +180,9 @@ CK_DLL_QUERY( Sigmund )
   
   // example of adding getter method
   QUERY->add_mfun(QUERY, sigmund_getFreq, "float", "freq");
+
+  // example of adding getter method
+  QUERY->add_mfun(QUERY, sigmund_getPower, "float", "power");
   
   // this reserves a variable in the ChucK internal class to store 
   // referene to the c++ class we defined above
@@ -247,7 +250,6 @@ CK_DLL_MFUN(sigmund_setParam)
   RETURN->v_float = bcdata->setParam(GET_NEXT_FLOAT(ARGS));
   }*/
 
-
 // example implementation for getter
 CK_DLL_MFUN(sigmund_getFreq)
 {
@@ -255,4 +257,13 @@ CK_DLL_MFUN(sigmund_getFreq)
   Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
   // set the return value
   RETURN->v_float = bcdata->getFreq();
+}
+
+// example implementation for getter
+CK_DLL_MFUN(sigmund_getPower)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->getPower();
 }
