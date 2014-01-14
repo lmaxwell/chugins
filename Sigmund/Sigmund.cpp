@@ -21,8 +21,8 @@ CK_DLL_CTOR(sigmund_ctor);
 CK_DLL_DTOR(sigmund_dtor);
 
 // example of getter/setter
-CK_DLL_MFUN(sigmund_setParam);
-CK_DLL_MFUN(sigmund_getParam);
+//CK_DLL_MFUN(sigmund_setParam);
+CK_DLL_MFUN(sigmund_getFreq);
 
 // for Chugins extending UGen, this is mono synthesis function for 1 sample
 CK_DLL_TICK(sigmund_tick);
@@ -55,37 +55,36 @@ public:
   // constructor
   Sigmund( t_CKFLOAT fs)
   {
-    m_param = 0;
-    x = (t_sigmund*)malloc(sizeof(t_sigmund));
-    x->x_npts = NPOINTS_DEF;
-    x->x_param1 = 6;
-    x->x_param2 = 0.5;
-    x->x_param3 = 0;
-    x->x_hop = HOP_DEF;
-    x->x_mode = MODE_STREAM;
-    x->x_npeak = NPEAK_DEF;
-    x->x_vibrato = VIBRATO_DEF;
-    x->x_stabletime = STABLETIME_DEF;
-    x->x_growth = GROWTH_DEF;
-    x->x_minpower = MINPOWER_DEF;
-    x->x_maxfreq = 1000000;
-    x->x_loud = 0;
-    x->x_sr = fs;
-    x->x_trackv = 0;
-    x->x_ntrack = 0;
-    x->x_dopitch = x->x_donote = x->x_dotracks = 0;
-    inbuf = (SAMPLE*)malloc(sizeof(SAMPLE)*x->x_npts);
-    for (int i=0; i<x->x_npts; i++)
+    npts = NPOINTS_DEF;
+    param1 = 6;
+    param2 = 0.5;
+    param3 = 0;
+    hop = HOP_DEF;
+    mode = MODE_STREAM;
+    npeak = NPEAK_DEF;
+    vibrato = VIBRATO_DEF;
+    stabletime = STABLETIME_DEF;
+    growth = GROWTH_DEF;
+    minpower = MINPOWER_DEF;
+    maxfreq = 1000000;
+    loud = 0;
+    srate = fs;
+    trackv = 0;
+    ntrack = 0;
+    donote = dotracks = 0;
+    dopitch = 1;
+    inbuf = (SAMPLE*)malloc(sizeof(SAMPLE)*npts);
+    for (int i=0; i<npts; i++)
       inbuf[i] = 0;
     inbufIndex = 0;
+    freq = 0;
   }
   
   ~Sigmund()
   {
-    for (int i=0; i<x->x_npts; i++)
+    for (int i=0; i<npts; i++)
       inbuf[i] = 0;
     delete inbuf;
-    delete x;
   }
     
   // for Chugins extending UGen
@@ -94,42 +93,57 @@ public:
     // default: this passes whatever input is patched into Chugin
     // fill sample buffer
     inbuf[inbufIndex++] = in;
-    if (inbufIndex >= x->x_npts)
+    if (inbufIndex >= npts)
       {
 	inbufIndex = 0;
 	// THE MAGIC HAPPENS!!
-	t_peak *peakv = (t_peak *)alloca(sizeof(t_peak) * x->x_npeak);
+	t_peak *peakv = (t_peak *)alloca(sizeof(t_peak) * npeak);
 	int nfound, i, cnt;
-	t_float freq = 0, power, note = 0;
-	sigmund_getrawpeaks(x->x_npts, inbuf, x->x_npeak, peakv,
-			    &nfound, &power, x->x_sr, x->x_loud, x->x_maxfreq);
-	if (x->x_dopitch)
-	  sigmund_getpitch(nfound, peakv, &freq, x->x_npts, x->x_sr, 
-			   x->x_param1, x->x_param2, x->x_loud);
-	  if (x->x_donote)
-	  notefinder_doit(&x->x_notefinder, freq, power, &note, x->x_vibrato, 
-			  1 + x->x_stabletime * 0.001 * x->x_sr / (t_float)x->x_hop,
-			  exp(LOG10*0.1*(x->x_minpower - 100)), x->x_growth, x->x_loud);
-	if (x->x_dotracks)
-	  sigmund_peaktrack(nfound, peakv, x->x_ntrack, x->x_trackv, x->x_loud);
+	t_float power, note = 0;
+	sigmund_getrawpeaks(npts, inbuf, npeak, peakv,
+			    &nfound, &power, srate, loud, maxfreq);
+	if (dopitch)
+	  sigmund_getpitch(nfound, peakv, &freq, npts, srate, 
+			   param1, param2, loud);
+	  if (donote)
+	  notefinder_doit(&notefinder, freq, power, &note, vibrato, 
+			  1 + stabletime * 0.001 * srate / (t_float)hop,
+			  exp(LOG10*0.1*(minpower - 100)), growth, loud);
+	if (dotracks)
+	  sigmund_peaktrack(nfound, peakv, ntrack, trackv, loud);
       }
     return in;
   }
-  
-  // set parameter example
-  float setParam( t_CKFLOAT p )
-  {
-    m_param = p;
-    return p;
-  }
-  
+    
   // get parameter example
-  float getParam() { return m_param; }
+  float getFreq() { return freq; }
   
 private:
   // instance data
-  float m_param;
-  t_sigmund *x;
+  t_float srate;       /* sample rate */
+  int mode;         /* MODE_STREAM, etc. */
+  int npts;         /* number of points in analysis window */
+  int npeak;        /* number of peaks to find */
+  int loud;         /* debug level */
+  //t_sample *inbuf;  /* input buffer */
+  int infill;       /* number of points filled */
+  int countdown;    /* countdown to start filling buffer */
+  int hop;          /* samples between analyses */ 
+  t_float maxfreq;    /* highest-frequency peak to report */ 
+  t_float vibrato;    /* vibrato depth in half tones */ 
+  t_float stabletime; /* period of stability needed for note */ 
+  t_float growth;     /* growth to set off a new note */ 
+  t_float minpower;   /* minimum power, in DB, for a note */ 
+  t_float param1;     /* three parameters for temporary use */
+  t_float param2;
+  t_float param3;
+  t_notefinder notefinder;  /* note parsing state */
+  t_peak *trackv;           /* peak tracking state */
+  int ntrack;               /* number of peaks tracked */
+  unsigned int dopitch:1;   /* which things to calculate */
+  unsigned int donote:1;
+  unsigned int dotracks:1;
+  t_float freq;
   SAMPLE* inbuf;
   unsigned int inbufIndex;
 };
@@ -160,12 +174,12 @@ CK_DLL_QUERY( Sigmund )
   // and declare a tickf function using CK_DLL_TICKF
   
   // example of adding setter method
-  QUERY->add_mfun(QUERY, sigmund_setParam, "float", "param");
+  //QUERY->add_mfun(QUERY, sigmund_setFreq, "float", "param");
   // example of adding argument to the above method
-  QUERY->add_arg(QUERY, "float", "arg");
+  //QUERY->add_arg(QUERY, "float", "arg");
   
   // example of adding getter method
-  QUERY->add_mfun(QUERY, sigmund_getParam, "float", "param");
+  QUERY->add_mfun(QUERY, sigmund_getFreq, "float", "freq");
   
   // this reserves a variable in the ChucK internal class to store 
   // referene to the c++ class we defined above
@@ -223,7 +237,7 @@ CK_DLL_TICK(sigmund_tick)
   return TRUE;
 }
 
-
+/*
 // example implementation for setter
 CK_DLL_MFUN(sigmund_setParam)
 {
@@ -231,14 +245,14 @@ CK_DLL_MFUN(sigmund_setParam)
   Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
   // set the return value
   RETURN->v_float = bcdata->setParam(GET_NEXT_FLOAT(ARGS));
-}
+  }*/
 
 
 // example implementation for getter
-CK_DLL_MFUN(sigmund_getParam)
+CK_DLL_MFUN(sigmund_getFreq)
 {
   // get our c++ class pointer
   Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
   // set the return value
-  RETURN->v_float = bcdata->getParam();
+  RETURN->v_float = bcdata->getFreq();
 }
