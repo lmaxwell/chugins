@@ -11,6 +11,8 @@
 // general includes
 #include <math.h>
 
+#define CLIP(a, lo, hi) ( (a)>(lo)?( (a)<(hi)?(a):(hi) ):(lo) )
+
 // declaration of chugin constructor
 CK_DLL_CTOR(sigmund_ctor);
 // declaration of chugin desctructor
@@ -20,6 +22,22 @@ CK_DLL_DTOR(sigmund_dtor);
 //CK_DLL_MFUN(sigmund_setParam);
 CK_DLL_MFUN(sigmund_getFreq);
 CK_DLL_MFUN(sigmund_getPower);
+CK_DLL_MFUN(sigmund_getPeaks);
+CK_DLL_MFUN(sigmund_getTracks);
+
+CK_DLL_MFUN(sigmund_setNpts);
+CK_DLL_MFUN(sigmund_setHop);
+CK_DLL_MFUN(sigmund_setNpeak);
+CK_DLL_MFUN(sigmund_setMaxfreq);
+CK_DLL_MFUN(sigmund_setVibrato);
+CK_DLL_MFUN(sigmund_setStabletime);
+CK_DLL_MFUN(sigmund_setGrowth);
+CK_DLL_MFUN(sigmund_setMinpower);
+CK_DLL_MFUN(sigmund_setParam1);
+CK_DLL_MFUN(sigmund_setParam2);
+CK_DLL_MFUN(sigmund_setParam3);
+
+
 
 // for Chugins extending UGen, this is mono synthesis function for 1 sample
 CK_DLL_TICK(sigmund_tick);
@@ -41,6 +59,7 @@ extern "C"
 		       t_float growththresh, int loud);
   void sigmund_peaktrack(int ninpeak, t_peak *inpeakv, 
 			 int noutpeak, t_peak *outpeakv, int loud);
+  int sigmund_ilog2(int n);
 } 
 
 // class definition for internal Chugin data
@@ -67,23 +86,24 @@ public:
     loud = 0;
     srate = fs;
     trackv = 0;
-    ntrack = 0;
-    donote = dotracks = 0;
-    dopitch = 1;
-    inbuf = (SAMPLE*)malloc(sizeof(SAMPLE)*npts);
-    for (int i=0; i<npts; i++)
-      inbuf[i] = 0;
+	dopitch = true;
+	dotracks = false;
     inbufIndex = 0;
     freq = 0;
 	power = 0;
 	note = 0;
+    inbuf = new SAMPLE[npts];//(SAMPLE*)malloc(sizeof(SAMPLE)*npts);
+    for (int i=0; i<npts; i++)
+      inbuf[i] = 0;
+	peakv = new t_peak[npeak];
+	trackv = new t_peak[npeak];
   }
   
   ~Sigmund()
   {
-    for (int i=0; i<npts; i++)
-      inbuf[i] = 0;
     delete inbuf;
+	delete peakv;
+	delete trackv;
   }
     
   // for Chugins extending UGen
@@ -96,19 +116,14 @@ public:
       {
 	inbufIndex = 0;
 	// THE MAGIC HAPPENS!!
-	t_peak *peakv = (t_peak *)alloca(sizeof(t_peak) * npeak);
 	int nfound, i, cnt;
 	sigmund_getrawpeaks(npts, inbuf, npeak, peakv,
-			    &nfound, &power, srate, loud, maxfreq);
+						&nfound, &power, srate, loud, maxfreq);
 	if (dopitch)
 	  sigmund_getpitch(nfound, peakv, &freq, npts, srate, 
 					   param1, param2, loud);
-	if (donote)
-	  notefinder_doit(&notefinder, freq, power, &note, vibrato, 
-					  1 + stabletime * 0.001 * srate / (t_float)hop,
-					  exp(LOG10*0.1*(minpower - 100)), growth, loud);
 	if (dotracks)
-	  sigmund_peaktrack(nfound, peakv, ntrack, trackv, loud);
+	  sigmund_peaktrack(nfound, peakv, npeak, trackv, loud);
       }
 	return in;
   }
@@ -118,6 +133,98 @@ public:
 
   // get parameter example
   float getPower() { return power; }
+
+  float* getPeaks() { return NULL; }
+  float* getTracks() { return NULL; }
+
+  void clear()
+  {
+	for (int i=0; i<npts; i++)
+	  inbuf[i] = 0;
+	inbufIndex = 0;
+  }
+
+  float setNpts ( t_CKINT x)
+  {
+	float nwas = npts;
+	npts = x;
+	if (npts < NPOINTS_MIN)
+	  npts = NPOINTS_MIN;
+	if (npts != (1 << sigmund_ilog2(npts)))
+	  printf("Sigmund: adjusting analysis size to %d points\n", (npts = (1 << sigmund_ilog2(npts))));
+	if (npts != nwas)
+	  inbufIndex = 0;
+	if (mode==MODE_STREAM)
+	  {
+		if (inbuf)
+		  {
+			delete inbuf;
+		  }
+		inbuf = new SAMPLE[npts];
+	  }
+	else inbuf = 0;
+	return x;
+  }
+
+  float setHop ( t_CKINT x)
+  {
+	hop = x;
+	int testhop = (1 << sigmund_ilog2(hop));
+	if (hop != testhop)
+	  {
+		hop = testhop;
+		printf("Sigmund: adjusting analysis size to %d points\n", hop);
+	  }
+	return x;
+  }
+
+  float setNpeak ( t_CKFLOAT x)
+  {
+	return x;
+  }
+
+  float setMaxfreq ( t_CKFLOAT x)
+  {
+	return x;
+  }
+
+  float setVibrato ( t_CKFLOAT x)
+  {
+	return x;
+  }
+
+  float setStabletime ( t_CKFLOAT x)
+  {
+	return x;
+  }
+
+  float setGrowth ( t_CKFLOAT x)
+  {
+	return x;
+  }
+
+  float setMinpower ( t_CKFLOAT x)
+  {
+	return x;
+  }
+
+  float setParam1 ( t_CKFLOAT x)
+  {
+	param1 = x;
+	return x;
+  }
+
+  float setParam2 ( t_CKFLOAT x)
+  {
+	param2 = x;
+	return x;
+  }
+
+  float setParam3 ( t_CKFLOAT x)
+  {
+	param3 = x;
+	return x;
+  }
   
 private:
   // instance data
@@ -139,10 +246,8 @@ private:
   t_float param3;
   t_notefinder notefinder;  // note parsing state 
   t_peak *trackv;           // peak tracking state 
-  int ntrack;               // number of peaks tracked 
-  unsigned int dopitch:1;   // which things to calculate 
-  unsigned int donote:1;
-  unsigned int dotracks:1;
+  t_peak *peakv;
+  bool dopitch, dotracks;
   t_float freq, power, note;
   SAMPLE* inbuf;
   unsigned int inbufIndex;
