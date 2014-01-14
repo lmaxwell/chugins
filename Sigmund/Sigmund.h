@@ -56,4 +56,3 @@ typedef struct _notefinder
   t_histpoint n_hist[NHISTPOINT];
   int n_histphase;
 } t_notefinder;
-

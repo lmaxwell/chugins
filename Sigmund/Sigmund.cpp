@@ -11,27 +11,21 @@
 // general includes
 #include <math.h>
 
-#define CLIP(a, lo, hi) ( (a)>(lo)?( (a)<(hi)?(a):(hi) ):(lo) )
-
 // declaration of chugin constructor
 CK_DLL_CTOR(sigmund_ctor);
 // declaration of chugin desctructor
 CK_DLL_DTOR(sigmund_dtor);
 
-// example of getter/setter
-//CK_DLL_MFUN(sigmund_setParam);
+CK_DLL_MFUN(sigmund_clear);
 CK_DLL_MFUN(sigmund_getFreq);
 CK_DLL_MFUN(sigmund_getPower);
 CK_DLL_MFUN(sigmund_getPeaks);
 CK_DLL_MFUN(sigmund_getTracks);
 
 CK_DLL_MFUN(sigmund_setNpts);
-CK_DLL_MFUN(sigmund_setHop);
 CK_DLL_MFUN(sigmund_setNpeak);
-CK_DLL_MFUN(sigmund_setMaxfreq);
-CK_DLL_MFUN(sigmund_setVibrato);
 CK_DLL_MFUN(sigmund_setStabletime);
-CK_DLL_MFUN(sigmund_setGrowth);
+CK_DLL_MFUN(sigmund_setMaxfreq);
 CK_DLL_MFUN(sigmund_setMinpower);
 CK_DLL_MFUN(sigmund_setParam1);
 CK_DLL_MFUN(sigmund_setParam2);
@@ -75,7 +69,6 @@ public:
     param1 = 6;
     param2 = 0.5;
     param3 = 0;
-    hop = HOP_DEF;
     mode = MODE_STREAM;
     npeak = NPEAK_DEF;
     vibrato = VIBRATO_DEF;
@@ -86,8 +79,8 @@ public:
     loud = 0;
     srate = fs;
     trackv = 0;
-	dopitch = true;
-	dotracks = false;
+    dopitch = true;
+    dotracks = false;
     inbufIndex = 0;
     freq = 0;
 	power = 0;
@@ -132,10 +125,17 @@ public:
   float getFreq() { return freq; }
 
   // get parameter example
-  float getPower() { return power; }
+  float getPower() { return sigmund_powtodb(power); }
 
-  float* getPeaks() { return NULL; }
-  float* getTracks() { return NULL; }
+  Chuck_Object* getPeaks()
+  {
+	return NULL;
+  }
+
+  Chuck_Object* getTracks()
+  {
+	return NULL;
+  }
 
   void clear()
   {
@@ -166,45 +166,30 @@ public:
 	return x;
   }
 
-  float setHop ( t_CKINT x)
+  float setNpeak ( t_CKINT x)
   {
-	hop = x;
-	int testhop = (1 << sigmund_ilog2(hop));
-	if (hop != testhop)
-	  {
-		hop = testhop;
-		printf("Sigmund: adjusting analysis size to %d points\n", hop);
-	  }
-	return x;
-  }
-
-  float setNpeak ( t_CKFLOAT x)
-  {
+	npeak = x;
+	if (npeak < 1) npeak = 1;
 	return x;
   }
 
   float setMaxfreq ( t_CKFLOAT x)
   {
+	maxfreq = x;
 	return x;
   }
 
-  float setVibrato ( t_CKFLOAT x)
+  float setStabletime ( t_CKDUR x)
   {
-	return x;
-  }
-
-  float setStabletime ( t_CKFLOAT x)
-  {
-	return x;
-  }
-
-  float setGrowth ( t_CKFLOAT x)
-  {
+	stabletime = x/srate;
+	if (stabletime < 0) stabletime = 0;
 	return x;
   }
 
   float setMinpower ( t_CKFLOAT x)
   {
+	minpower = 0;
+	if (minpower < 0) minpower = 0;
 	return x;
   }
 
@@ -225,8 +210,33 @@ public:
 	param3 = x;
 	return x;
   }
+
+  int doPitch (t_CKINT x)
+  {
+	if (x>0) dopitch = true;
+	else dopitch = false;
+	return x;
+  }
+
+  int doTracks (t_CKINT x)
+  {
+	if (x>0) dotracks = true;
+	else dotracks = false;
+	return x;
+  }
   
 private:
+
+  t_float sigmund_powtodb(t_float f)
+  {
+    if (f <= 0) return (0);
+    else
+	  {
+        t_float val = 100 + 10./LOG10 * log(f);
+        return (val < 0 ? 0 : val);
+	  }
+  }
+
   // instance data
   t_float srate;       // sample rate 
   int mode;         // MODE_STREAM, etc. 
@@ -235,7 +245,6 @@ private:
   int loud;         // debug level 
   int infill;       // number of points filled 
   int countdown;    // countdown to start filling buffer 
-  int hop;          // samples between analyses  
   t_float maxfreq;    // highest-frequency peak to report  
   t_float vibrato;    // vibrato depth in half tones  
   t_float stabletime; // period of stability needed for note  
@@ -252,7 +261,6 @@ private:
   SAMPLE* inbuf;
   unsigned int inbufIndex;
 };
-
 
 // query function: chuck calls this when loading the Chugin
 // NOTE: developer will need to modify this function to
@@ -277,17 +285,45 @@ CK_DLL_QUERY( Sigmund )
   // NOTE: if this is to be a UGen with more than 1 channel, 
   // e.g., a multichannel UGen -- will need to use add_ugen_funcf()
   // and declare a tickf function using CK_DLL_TICKF
-  
-  // example of adding setter method
-  //QUERY->add_mfun(QUERY, sigmund_setFreq, "float", "param");
-  // example of adding argument to the above method
-  //QUERY->add_arg(QUERY, "float", "arg");
-  
+    
+  // example of adding getter method
+  QUERY->add_mfun(QUERY, sigmund_clear, "void", "clear");
+
   // example of adding getter method
   QUERY->add_mfun(QUERY, sigmund_getFreq, "float", "freq");
 
   // example of adding getter method
-  QUERY->add_mfun(QUERY, sigmund_getPower, "float", "power");
+  QUERY->add_mfun(QUERY, sigmund_getPower, "float", "env");
+
+  // example of adding getter method
+  QUERY->add_mfun(QUERY, sigmund_getPeaks, "Object", "peaks");
+
+  // example of adding getter method
+  QUERY->add_mfun(QUERY, sigmund_getTracks, "Object", "tracks");
+
+  QUERY->add_mfun(QUERY, sigmund_setNpts, "int", "npts");
+  QUERY->add_arg(QUERY, "int", "npts");
+
+  QUERY->add_mfun(QUERY, sigmund_setNpeak, "int", "npeak");
+  QUERY->add_arg(QUERY, "int", "npeak");
+
+  QUERY->add_mfun(QUERY, sigmund_setStabletime, "dur", "stabletime");
+  QUERY->add_arg(QUERY, "dur", "stabletime");
+
+  QUERY->add_mfun(QUERY, sigmund_setMaxfreq, "float", "maxfreq");
+  QUERY->add_arg(QUERY, "float", "arg");
+
+  QUERY->add_mfun(QUERY, sigmund_setMinpower, "float", "minpower");
+  QUERY->add_arg(QUERY, "float", "arg");
+
+  QUERY->add_mfun(QUERY, sigmund_setParam1, "float", "param1");
+  QUERY->add_arg(QUERY, "float", "arg");
+
+  QUERY->add_mfun(QUERY, sigmund_setParam2, "float", "param2");
+  QUERY->add_arg(QUERY, "float", "arg");
+
+  QUERY->add_mfun(QUERY, sigmund_setParam3, "float", "param3");
+  QUERY->add_arg(QUERY, "float", "arg");
   
   // this reserves a variable in the ChucK internal class to store 
   // referene to the c++ class we defined above
@@ -345,16 +381,6 @@ CK_DLL_TICK(sigmund_tick)
   return TRUE;
 }
 
-/*
-// example implementation for setter
-CK_DLL_MFUN(sigmund_setParam)
-{
-  // get our c++ class pointer
-  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
-  // set the return value
-  RETURN->v_float = bcdata->setParam(GET_NEXT_FLOAT(ARGS));
-  }*/
-
 // example implementation for getter
 CK_DLL_MFUN(sigmund_getFreq)
 {
@@ -371,4 +397,94 @@ CK_DLL_MFUN(sigmund_getPower)
   Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
   // set the return value
   RETURN->v_float = bcdata->getPower();
+}
+
+// example implementation for getter
+CK_DLL_MFUN(sigmund_getPeaks)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_object = bcdata->getPeaks();
+}
+
+// example implementation for getter
+CK_DLL_MFUN(sigmund_getTracks)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_object = bcdata->getTracks();
+}
+
+CK_DLL_MFUN(sigmund_setNpts)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_int = bcdata->setNpts(GET_NEXT_INT(ARGS));
+}
+
+CK_DLL_MFUN(sigmund_setNpeak)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_int = bcdata->setNpeak(GET_NEXT_INT(ARGS));
+}
+
+CK_DLL_MFUN(sigmund_setMaxfreq)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setMaxfreq(GET_NEXT_FLOAT(ARGS));
+}
+
+CK_DLL_MFUN(sigmund_setMinpower)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setMinpower(GET_NEXT_FLOAT(ARGS));
+}
+
+CK_DLL_MFUN(sigmund_setParam1)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setParam1(GET_NEXT_FLOAT(ARGS));
+}
+
+CK_DLL_MFUN(sigmund_setParam2)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setParam2(GET_NEXT_FLOAT(ARGS));
+}
+
+CK_DLL_MFUN(sigmund_setParam3)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setParam3(GET_NEXT_FLOAT(ARGS));
+}
+
+CK_DLL_MFUN(sigmund_setStabletime)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  RETURN->v_dur = bcdata->setStabletime(GET_NEXT_DUR(ARGS));
+}
+
+CK_DLL_MFUN(sigmund_clear)
+{
+  // get our c++ class pointer
+  Sigmund * bcdata = (Sigmund *) OBJ_MEMBER_INT(SELF, sigmund_data_offset);
+  // set the return value
+  bcdata->clear();
 }
