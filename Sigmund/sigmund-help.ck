@@ -35,13 +35,15 @@
 // env() (read-only): get reported RMS value (in dB)
 //     of input signal
 //
-// peaks() (read-only): currently unimplemented;
-//     eventually will report all sinusoundal peaks
-//     in order of amplitude
+// peak (int): report freq of nth sinusoundal peak
+//     sorting depends on parameter "dotracks"
 //
-// tracks() (read-only): currently unimplemented;
-//     eventually will report all sinusoundal peaks
-//     organized into tracks
+// amp (int): report amplitude of nth sinusoundal peak
+//     sorting depends on parameter "dotracks"
+//
+// tracks (0/1): toggle whether peak and amp are
+//     sorted in order of amplitude or organized into
+//     tracks
 //
 // clear(): clear buffers and reset
 //
