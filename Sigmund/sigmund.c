@@ -1,3 +1,5 @@
+/* Copyright (c) 2005 Miller Puckette.  BSD licensed.  No warranties. */
+
 #include "Sigmund.h"
 
 // general includes
