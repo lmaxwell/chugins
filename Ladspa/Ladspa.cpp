@@ -56,10 +56,9 @@ public:
   // constructor
   Ladspa( t_CKFLOAT fs)
   {
-    pPlugin = (LADSPA_Handle *)malloc(sizeof(LADSPA_Handle));
     pluginLoaded = false;
-	pluginActivated = false;
-	verbose = true;
+    pluginActivated = false;
+    verbose = true;
     srate = fs;
     bufsize = DEFAULT_BUFSIZE;
   }
@@ -69,10 +68,17 @@ public:
   {
     if (pluginActivated) psDescriptor->cleanup(pPlugin);
     if (pluginLoaded)
-	  {
-		dlclose(pvPluginHandle);
-		if (verbose) printf("LADSPA: closed plugin\n");
-	  }
+      {
+	dlclose(pvPluginHandle);
+	if (verbose) printf("LADSPA: closed plugin\n");
+      }
+	for (int i=0; i<inports; i++)
+	  delete inbuf[i];
+	for (int i=0; i<outports; i++)
+	  delete outbuf[i];
+	delete inbuf;
+	delete outbuf;
+	delete kbuf;
   }
   
   // for Chugins extending UGen
@@ -106,6 +112,7 @@ public:
 			  if (verbose) printf ("LADSA: setting parameter \"%s\" to %g\n",
 								   psDescriptor->PortNames[kbuf[param].ladspaIndex], val);
 			  kbuf[param].value = (LADSPA_Data)val;
+			  psDescriptor->run(pPlugin, 0);
 			}
 		else
 		  if (kports>1)
@@ -327,16 +334,16 @@ private:
 	  }
       }
     
-    inbuf = (LADSPA_Data **)malloc(sizeof(LADSPA_Data *)*inports);
-    outbuf = (LADSPA_Data **)malloc(sizeof(LADSPA_Data *)*outports);
-    kbuf = (ControlData *)malloc(sizeof(ControlData) * kports);
+    inbuf = new LADSPA_Data*[inports];
+    outbuf = new LADSPA_Data*[outports];
+	kbuf = new ControlData[kports];
     for (int i=0; i<inports; i++)
       {
-		inbuf[i] = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*bufsize);
+		inbuf[i] = new LADSPA_Data[bufsize];
       }
     for (int i=0; i<outports; i++)
       {
-		outbuf[i] = (LADSPA_Data *)malloc(sizeof(LADSPA_Data)*bufsize);
+		outbuf[i] = new LADSPA_Data[bufsize];
       }
     for (int i=0; i<kports; i++)
       {
