@@ -24,6 +24,8 @@ List of New Chugins
   - Elliptic filter, capable of very steep slopes or interesting harmonic ripples
 - **LADSPA**
   - Load and run LADSPA plugins
+- **Sigmund**
+  - Sinusoidal analysis and pitch tracker by Miller Puckette
 
 Chugins That I Am Working On
 --
