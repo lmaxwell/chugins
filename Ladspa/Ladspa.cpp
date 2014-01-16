@@ -109,7 +109,7 @@ public:
 			}
 		  else
 			{
-			  if (verbose) printf ("LADSA: setting parameter \"%s\" to %g\n",
+			  if (verbose) printf ("LADSPA: setting parameter \"%s\" to %g\n",
 								   psDescriptor->PortNames[kbuf[param].ladspaIndex], val);
 			  kbuf[param].value = (LADSPA_Data)val;
 			  psDescriptor->run(pPlugin, 0);
