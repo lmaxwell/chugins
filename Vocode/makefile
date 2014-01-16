@@ -4,7 +4,7 @@ CHUGIN_NAME=Vocode
 
 # all of the c/cpp files that compose this chugin
 C_MODULES=
-CXX_MODULES=Vocode.cpp
+CXX_MODULES=Obalance.cpp Oequalizer.cpp Oonepole.cpp Orms.cpp Vocode.cpp
 
 # where the chuck headers are
 CK_SRC_PATH?=../chuck/include/

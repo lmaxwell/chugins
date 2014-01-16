@@ -6,10 +6,17 @@
 // this should align with the correct versions of these ChucK files
 #include "chuck_dl.h"
 #include "chuck_def.h"
+#include "Ougens.h"
 
 // general includes
 #include <stdio.h>
 #include <limits.h>
+
+#define kMinCenterFreq 20.0f
+#define CLIP(a, lo, hi) ( (a)>(lo)?( (a)<(hi)?(a):(hi) ):(lo) )
+
+class Oequalizer;
+class Obalance;
 
 // declaration of chugin constructor
 CK_DLL_CTOR(vocode_ctor);
@@ -21,11 +28,12 @@ CK_DLL_MFUN(vocode_setParam);
 CK_DLL_MFUN(vocode_getParam);
 
 // for Chugins extending UGen, this is mono synthesis function for 1 sample
-CK_DLL_TICK(vocode_tick);
+CK_DLL_TICKF(vocode_tick);
 
 // this is a special offset reserved for Chugin internal data
 t_CKINT vocode_data_offset = 0;
 
+const OeqType kBandPassType = OeqBandPassCPG;  // constant 0 dB peak gain
 
 // class definition for internal Chugin data
 // (note: this isn't strictly necessary, but serves as example
@@ -33,32 +41,92 @@ t_CKINT vocode_data_offset = 0;
 class Vocode
 {
 public:
-    // constructor
-    Vocode( t_CKFLOAT fs)
-    {
-        m_param = 0;
-    }
+  // constructor
+  Vocode( t_CKFLOAT fs)
+  {
+    _numfilts = 0;
+    _hold = 0;
+    _responsetime = 0.01;
+    _nyquist = fs * 0.5f;
+    _modtable_prev = new double [_numfilts];   // these two arrays inited below
+    _cartable_prev = new double [_numfilts];
+    _maptable = new int [_numfilts];
+    _lastmod = new float [_numfilts];
+    _modulator_filt = new Oequalizer * [_numfilts];
+    _carrier_filt = new Oequalizer * [_numfilts];
+    _balancer = new Obalance * [_numfilts];
 
-    // for Chugins extending UGen
-    SAMPLE tick( SAMPLE in )
-    {
-        // default: this passes whatever input is patched into Chugin
-        return in;
-    }
+    for (int i = 0; i < _numfilts; i++)
+      {
+	_modulator_filt[i] = new Oequalizer(fs, kBandPassType);
+	_modtable_prev[i] = _modtable_src[i];
+	float mfreq = updateFreq(_modtable_src[i], _modtransp);
+	_modulator_filt[i]->setparams(mfreq, _modq);
+	
+	_carrier_filt[i] = new Oequalizer(fs, kBandPassType);
+	_cartable_prev[i] = _cartable_src[i];
+	float cfreq = updateFreq(_cartable_src[i], _cartransp);
+	_carrier_filt[i]->setparams(cfreq, _carq);
+	
+	_balancer[i] = new Obalance(fs);
+	
+	_lastmod[i] = 0.0f;	// not necessary
+      }
+    m_param = 0;
+  }
 
-    // set parameter example
-    float setParam( t_CKFLOAT p )
-    {
-        m_param = p;
-        return p;
-    }
-
-    // get parameter example
-    float getParam() { return m_param; }
+  ~Vocode()
+  {
+    delete [] _modtable_prev;
+    delete [] _cartable_prev;
+    delete [] _maptable;
+    delete [] _lastmod;
     
+    for (int i = 0; i < _numfilts; i++) {
+      delete _modulator_filt[i];
+      delete _carrier_filt[i];
+      delete _balancer[i];
+    }
+    delete [] _modulator_filt;
+    delete [] _carrier_filt;
+    delete [] _balancer;
+  }
+  
+  // for Chugins extending UGen
+  void tick( SAMPLE* in, SAMPLE* out, int nframes)
+  {
+    // default: this passes whatever input is patched into Chugin
+  }
+  
+  // set parameter example
+  float setParam( t_CKFLOAT p )
+  {
+    m_param = p;
+    return p;
+  }
+  
+  // get parameter example
+  float getParam() { return m_param; }
+  
 private:
-    // instance data
-    float m_param;
+  // instance data
+  float m_param;
+  int _numfilts, _hold;
+  int *_maptable;
+  float _modtransp, _cartransp, _modq, _carq, _responsetime;
+  float _amp, _pan, _nyquist;
+  float* _lastmod;
+  double *_modtable_src, *_cartable_src, *_modtable_prev, *_cartable_prev;
+  double *_maptable_src, *_scaletable;
+  Oequalizer **_modulator_filt, **_carrier_filt;
+  Obalance **_balancer;
+
+  int usage();
+  inline float convertSmooth(const float smooth);
+  inline float updateFreq(float freq, float transp)
+  {
+    return CLIP(freq,kMinCenterFreq,_nyquist);
+  }
 };
 
 
@@ -67,105 +135,105 @@ private:
 // add additional functions to this Chugin
 CK_DLL_QUERY( Vocode )
 {
-    // hmm, don't change this...
-    QUERY->setname(QUERY, "Vocode");
-    
-    // begin the class definition
-    // can change the second argument to extend a different ChucK class
-    QUERY->begin_class(QUERY, "Vocode", "UGen");
-
-    // register the constructor (probably no need to change)
-    QUERY->add_ctor(QUERY, vocode_ctor);
-    // register the destructor (probably no need to change)
-    QUERY->add_dtor(QUERY, vocode_dtor);
-    
-    // for UGen's only: add tick function
-    QUERY->add_ugen_func(QUERY, vocode_tick, NULL, 1, 1);
-    
-    // NOTE: if this is to be a UGen with more than 1 channel, 
-    // e.g., a multichannel UGen -- will need to use add_ugen_funcf()
-    // and declare a tickf function using CK_DLL_TICKF
-
-    // example of adding setter method
-    QUERY->add_mfun(QUERY, vocode_setParam, "float", "param");
-    // example of adding argument to the above method
-    QUERY->add_arg(QUERY, "float", "arg");
-
-    // example of adding getter method
-    QUERY->add_mfun(QUERY, vocode_getParam, "float", "param");
-    
-    // this reserves a variable in the ChucK internal class to store 
-    // referene to the c++ class we defined above
-    vocode_data_offset = QUERY->add_mvar(QUERY, "int", "@v_data", false);
-
-    // end the class definition
-    // IMPORTANT: this MUST be called!
-    QUERY->end_class(QUERY);
-
-    // wasn't that a breeze?
-    return TRUE;
+  // hmm, don't change this...
+  QUERY->setname(QUERY, "Vocode");
+  
+  // begin the class definition
+  // can change the second argument to extend a different ChucK class
+  QUERY->begin_class(QUERY, "Vocode", "UGen");
+  
+  // register the constructor (probably no need to change)
+  QUERY->add_ctor(QUERY, vocode_ctor);
+  // register the destructor (probably no need to change)
+  QUERY->add_dtor(QUERY, vocode_dtor);
+  
+  // for UGen's only: add tick function
+  QUERY->add_ugen_funcf(QUERY, vocode_tick, NULL, 2, 2);
+  
+  // NOTE: if this is to be a UGen with more than 1 channel, 
+  // e.g., a multichannel UGen -- will need to use add_ugen_funcf()
+  // and declare a tickf function using CK_DLL_TICKF
+  
+  // example of adding setter method
+  QUERY->add_mfun(QUERY, vocode_setParam, "float", "param");
+  // example of adding argument to the above method
+  QUERY->add_arg(QUERY, "float", "arg");
+  
+  // example of adding getter method
+  QUERY->add_mfun(QUERY, vocode_getParam, "float", "param");
+  
+  // this reserves a variable in the ChucK internal class to store 
+  // referene to the c++ class we defined above
+  vocode_data_offset = QUERY->add_mvar(QUERY, "int", "@v_data", false);
+  
+  // end the class definition
+  // IMPORTANT: this MUST be called!
+  QUERY->end_class(QUERY);
+  
+  // wasn't that a breeze?
+  return TRUE;
 }
 
 
 // implementation for the constructor
 CK_DLL_CTOR(vocode_ctor)
 {
-    // get the offset where we'll store our internal c++ class pointer
-    OBJ_MEMBER_INT(SELF, vocode_data_offset) = 0;
-    
-    // instantiate our internal c++ class representation
-    Vocode * bcdata = new Vocode(API->vm->get_srate());
-    
-    // store the pointer in the ChucK object member
-    OBJ_MEMBER_INT(SELF, vocode_data_offset) = (t_CKINT) bcdata;
+  // get the offset where we'll store our internal c++ class pointer
+  OBJ_MEMBER_INT(SELF, vocode_data_offset) = 0;
+  
+  // instantiate our internal c++ class representation
+  Vocode * bcdata = new Vocode(API->vm->get_srate());
+  
+  // store the pointer in the ChucK object member
+  OBJ_MEMBER_INT(SELF, vocode_data_offset) = (t_CKINT) bcdata;
 }
 
 
 // implementation for the destructor
 CK_DLL_DTOR(vocode_dtor)
 {
-    // get our c++ class pointer
-    Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
-    // check it
-    if( bcdata )
+  // get our c++ class pointer
+  Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
+  // check it
+  if( bcdata )
     {
-        // clean up
-        delete bcdata;
-        OBJ_MEMBER_INT(SELF, vocode_data_offset) = 0;
-        bcdata = NULL;
+      // clean up
+      delete bcdata;
+      OBJ_MEMBER_INT(SELF, vocode_data_offset) = 0;
+      bcdata = NULL;
     }
 }
 
 
 // implementation for tick function
-CK_DLL_TICK(vocode_tick)
+CK_DLL_TICKF(vocode_tick)
 {
-    // get our c++ class pointer
-    Vocode * c = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
- 
-    // invoke our tick function; store in the magical out variable
-    if(c) *out = c->tick(in);
+  // get our c++ class pointer
+  Vocode * c = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
+  
+  // invoke our tick function; store in the magical out variable
+  if(c) c->tick(in,out, nframes);
 
-    // yes
-    return TRUE;
+  // yes
+  return TRUE;
 }
 
 
 // example implementation for setter
 CK_DLL_MFUN(vocode_setParam)
 {
-    // get our c++ class pointer
-    Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
-    // set the return value
-    RETURN->v_float = bcdata->setParam(GET_NEXT_FLOAT(ARGS));
+  // get our c++ class pointer
+  Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setParam(GET_NEXT_FLOAT(ARGS));
 }
 
 
 // example implementation for getter
 CK_DLL_MFUN(vocode_getParam)
 {
-    // get our c++ class pointer
-    Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
-    // set the return value
-    RETURN->v_float = bcdata->getParam();
+  // get our c++ class pointer
+  Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->getParam();
 }
