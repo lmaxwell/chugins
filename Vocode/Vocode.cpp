@@ -15,8 +15,8 @@
 #define kMinCenterFreq 20.0f
 #define CLIP(a, lo, hi) ( (a)>(lo)?( (a)<(hi)?(a):(hi) ):(lo) )
 
-class Oequalizer;
-class Obalance;
+#define DEF_LOWFREQ   60
+#define DEF_BANDWIDTH 500
 
 // declaration of chugin constructor
 CK_DLL_CTOR(vocode_ctor);
@@ -24,8 +24,15 @@ CK_DLL_CTOR(vocode_ctor);
 CK_DLL_DTOR(vocode_dtor);
 
 // example of getter/setter
-CK_DLL_MFUN(vocode_setParam);
-CK_DLL_MFUN(vocode_getParam);
+CK_DLL_MFUN(vocode_setLowfreq);
+CK_DLL_MFUN(vocode_setHighfreq);
+CK_DLL_MFUN(vocode_setBandwidth);
+CK_DLL_MFUN(vocode_setHold);
+CK_DLL_MFUN(vocode_setResponsetime);
+CK_DLL_MFUN(vocode_setModQ);
+CK_DLL_MFUN(vocode_setCarQ);
+CK_DLL_MFUN(vocode_setModTranspose);
+CK_DLL_MFUN(vocode_setCarTranspose);
 
 // for Chugins extending UGen, this is mono synthesis function for 1 sample
 CK_DLL_TICKF(vocode_tick);
@@ -44,49 +51,33 @@ public:
   // constructor
   Vocode( t_CKFLOAT fs)
   {
-    _numfilts = 0;
-    _hold = 0;
-    _responsetime = 0.01;
+	_srate = fs;
+    _hold = false;
+    _responsetime = 0.01*fs;
     _nyquist = fs * 0.5f;
-    _modtable_prev = new double [_numfilts];   // these two arrays inited below
-    _cartable_prev = new double [_numfilts];
-    _maptable = new int [_numfilts];
-    _lastmod = new float [_numfilts];
-    _modulator_filt = new Oequalizer * [_numfilts];
-    _carrier_filt = new Oequalizer * [_numfilts];
-    _balancer = new Obalance * [_numfilts];
-
-    for (int i = 0; i < _numfilts; i++)
-      {
-	_modulator_filt[i] = new Oequalizer(fs, kBandPassType);
-	_modtable_prev[i] = _modtable_src[i];
-	float mfreq = updateFreq(_modtable_src[i], _modtransp);
-	_modulator_filt[i]->setparams(mfreq, _modq);
-	
-	_carrier_filt[i] = new Oequalizer(fs, kBandPassType);
-	_cartable_prev[i] = _cartable_src[i];
-	float cfreq = updateFreq(_cartable_src[i], _cartransp);
-	_carrier_filt[i]->setparams(cfreq, _carq);
-	
-	_balancer[i] = new Obalance(fs);
-	
-	_lastmod[i] = 0.0f;	// not necessary
-      }
-    m_param = 0;
+	_lowfreq = DEF_LOWFREQ;
+	_highfreq = fs * 0.5f;
+	_bandwidth = DEF_BANDWIDTH;
+	_modtransp = 1;
+	_cartransp = 1;
+	_modq = 1;
+	_carq = 1;
+	adjustBands();
   }
 
   ~Vocode()
   {
-    delete [] _modtable_prev;
-    delete [] _cartable_prev;
     delete [] _maptable;
+	delete [] _modtable;
+	delete [] _cartable;
     delete [] _lastmod;
     
-    for (int i = 0; i < _numfilts; i++) {
-      delete _modulator_filt[i];
-      delete _carrier_filt[i];
-      delete _balancer[i];
-    }
+    for (int i = 0; i < _numfilts; i++)
+	  {
+		delete _modulator_filt[i];
+		delete _carrier_filt[i];
+		delete _balancer[i];
+	  }
     delete [] _modulator_filt;
     delete [] _carrier_filt;
     delete [] _balancer;
@@ -96,36 +87,174 @@ public:
   void tick( SAMPLE* in, SAMPLE* out, int nframes)
   {
     // default: this passes whatever input is patched into Chugin
+    const int samps =  2;
+
+    const float carsig = in[0];
+    const float modsig = in[1];
+	memset (out, 0, sizeof(SAMPLE)*2);
+    out[0] = 0.0f;
+    out[1] = 0.0f;
+    
+    for (int j = 0; j < _numfilts; j++)
+      {
+		float mod;
+		if (_hold)
+		  mod = _lastmod[j];
+		else
+		  mod = _modulator_filt[j]->next(modsig);
+		float car = _carrier_filt[j]->next(carsig);
+		float balsig = _balancer[j]->next(car, mod);
+		out[0] += balsig;
+      }
   }
-  
-  // set parameter example
-  float setParam( t_CKFLOAT p )
+
+  int setHold (t_CKINT x)
   {
-    m_param = p;
-    return p;
+	if (x)
+	  {
+		_hold = true;
+		for (int i = 0; i < _numfilts; i++)
+		  {
+			_lastmod[i] = _modulator_filt[i]->last();
+		  }
+	  }
+	else _hold = false;
+	return x;
   }
-  
-  // get parameter example
-  float getParam() { return m_param; }
+
+  float setResponsetime ( t_CKDUR x)
+  {
+	if (x == _responsetime)
+	  return x;
+	_responsetime = x;
+	int windowlen = int(_responsetime + 0.5f);
+	if (windowlen < 2)   // otherwise, can get ear-splitting output
+	  windowlen = 2;
+	for (int i = 0; i < _numfilts; i++)
+	  _balancer[i]->setwindow(windowlen);
+	return _responsetime;
+  }
+
+  float setBandwidth ( t_CKFLOAT x)
+  {
+	if (x == _bandwidth)
+	  return x;
+	_bandwidth = x;
+	adjustBands();
+	return _bandwidth;
+  }
+
+  float setLowfreq ( t_CKFLOAT x)
+  {
+	if (x == _lowfreq)
+	  return x;
+	_lowfreq = CLIP(x,0,_nyquist);
+	adjustBands();
+	return _lowfreq;
+  }
+
+  float setHighfreq ( t_CKFLOAT x)
+  {
+	if (x == _highfreq)
+	  return x;
+	_highfreq = CLIP(x,0,_nyquist);
+	adjustBands();
+	return _highfreq;
+  }
+
+  float setModQ ( t_CKFLOAT x)
+  {
+	if (x == _modq)
+	  return x;
+	_modq = CLIP(x,0,_srate);
+	adjustBands();
+	return _modq;
+  }
+
+  float setCarQ ( t_CKFLOAT x)
+  {
+	if (x == _carq)
+	  return x;
+	_carq = CLIP(x,0,_srate);
+	adjustBands();
+	return _carq;
+  }
+
+  float setModTranspose ( t_CKFLOAT x)
+  {
+	if (x == _modtransp)
+	  return x;
+	_modtransp = CLIP(x,0,_srate);
+	adjustBands();
+	return _modtransp;
+  }
+
+  float setCarTranspose ( t_CKFLOAT x)
+  {
+	if (x == _cartransp)
+	  return x;
+	_cartransp = CLIP(x,0,_srate);
+	adjustBands();
+	return _cartransp;
+  }	
   
 private:
+  void adjustBands()
+  {
+	if (_lowfreq > _highfreq) swap2(_lowfreq, _highfreq);
+	int temp = (int)((_highfreq - _lowfreq)/_bandwidth);
+	if (!_numfilts || temp != _numfilts)
+	  {
+		_numfilts = temp;
+
+		_maptable = new int [_numfilts];
+		_modtable = new float [_numfilts];
+		_cartable = new float [_numfilts];
+		_lastmod = new float [_numfilts];
+		_modulator_filt = new Oequalizer * [_numfilts];
+		_carrier_filt = new Oequalizer * [_numfilts];
+		_balancer = new Obalance * [_numfilts];
+	  }
+	for (int i = 0; i < _numfilts; i++)
+	  {
+		_maptable[i] = 0;
+		// TODO: Maybe separate these later?
+		_modtable[i] = _lowfreq + i*_bandwidth;
+		_cartable[i] = _lowfreq + i*_bandwidth;
+		_modulator_filt[i] = new Oequalizer(_srate, kBandPassType);
+		float mfreq = _modtable[i] * _modtransp;
+		_modulator_filt[i]->setparams(mfreq, _modq);
+		
+		_carrier_filt[i] = new Oequalizer(_srate, kBandPassType);
+		float cfreq = _cartable[i] * _cartransp;
+		_carrier_filt[i]->setparams(cfreq, _carq);
+		
+		_balancer[i] = new Obalance(_srate);
+		
+		_lastmod[i] = 0.0f;	// not necessary
+	  }
+  }
+
   // instance data
-  float m_param;
-  int _numfilts, _hold;
+  float _srate;
+  int _numfilts;
+  bool _hold;
+  float _lowfreq, _highfreq, _bandwidth;
   int *_maptable;
   float _modtransp, _cartransp, _modq, _carq, _responsetime;
   float _amp, _pan, _nyquist;
   float* _lastmod;
-  double *_modtable_src, *_cartable_src, *_modtable_prev, *_cartable_prev;
-  double *_maptable_src, *_scaletable;
+  float *_modtable, *_cartable;
   Oequalizer **_modulator_filt, **_carrier_filt;
   Obalance **_balancer;
 
   int usage();
   inline float convertSmooth(const float smooth);
-  inline float updateFreq(float freq, float transp)
+  inline void swap2( float& a, float& b )
   {
-    return CLIP(freq,kMinCenterFreq,_nyquist);
+	float temp = a;
+	a = b;
+	b = temp;
   }
 };
 
@@ -147,30 +276,39 @@ CK_DLL_QUERY( Vocode )
   // register the destructor (probably no need to change)
   QUERY->add_dtor(QUERY, vocode_dtor);
   
-  // for UGen's only: add tick function
-  QUERY->add_ugen_funcf(QUERY, vocode_tick, NULL, 2, 2);
-  
-  // NOTE: if this is to be a UGen with more than 1 channel, 
-  // e.g., a multichannel UGen -- will need to use add_ugen_funcf()
-  // and declare a tickf function using CK_DLL_TICKF
-  
-  // example of adding setter method
-  QUERY->add_mfun(QUERY, vocode_setParam, "float", "param");
-  // example of adding argument to the above method
-  QUERY->add_arg(QUERY, "float", "arg");
-  
-  // example of adding getter method
-  QUERY->add_mfun(QUERY, vocode_getParam, "float", "param");
+    QUERY->add_ugen_funcf(QUERY, vocode_tick, NULL, 2, 2);
+    
+  QUERY->add_mfun(QUERY, vocode_setLowfreq, "float", "low");
+  QUERY->add_arg(QUERY, "float", "freq");
+
+  QUERY->add_mfun(QUERY, vocode_setHighfreq, "float", "high");
+  QUERY->add_arg(QUERY, "float", "freq");
+
+  QUERY->add_mfun(QUERY, vocode_setBandwidth, "float", "width");
+  QUERY->add_arg(QUERY, "float", "width");
+
+  QUERY->add_mfun(QUERY, vocode_setHold, "int", "hold");
+  QUERY->add_arg(QUERY, "int", "hold");
+
+  QUERY->add_mfun(QUERY, vocode_setResponsetime, "dur", "response");
+  QUERY->add_arg(QUERY, "dur", "response");
+
+  QUERY->add_mfun(QUERY, vocode_setModQ, "float", "modQ");
+  QUERY->add_arg(QUERY, "float", "modq");
+
+  QUERY->add_mfun(QUERY, vocode_setCarQ, "float", "carQ");
+  QUERY->add_arg(QUERY, "float", "carq");
+
+  QUERY->add_mfun(QUERY, vocode_setModTranspose, "float", "modTranspose");
+  QUERY->add_arg(QUERY, "float", "modtrans");
+
+  QUERY->add_mfun(QUERY, vocode_setCarTranspose, "float", "carTranspose");
+  QUERY->add_arg(QUERY, "float", "cartrans");
   
   // this reserves a variable in the ChucK internal class to store 
   // referene to the c++ class we defined above
   vocode_data_offset = QUERY->add_mvar(QUERY, "int", "@v_data", false);
-  
-  // end the class definition
-  // IMPORTANT: this MUST be called!
   QUERY->end_class(QUERY);
-  
-  // wasn't that a breeze?
   return TRUE;
 }
 
@@ -218,22 +356,74 @@ CK_DLL_TICKF(vocode_tick)
   return TRUE;
 }
 
-
-// example implementation for setter
-CK_DLL_MFUN(vocode_setParam)
+CK_DLL_MFUN(vocode_setLowfreq)
 {
   // get our c++ class pointer
   Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
   // set the return value
-  RETURN->v_float = bcdata->setParam(GET_NEXT_FLOAT(ARGS));
+  RETURN->v_float = bcdata->setLowfreq(GET_NEXT_FLOAT(ARGS));
 }
 
-
-// example implementation for getter
-CK_DLL_MFUN(vocode_getParam)
+CK_DLL_MFUN(vocode_setHighfreq)
 {
   // get our c++ class pointer
   Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
   // set the return value
-  RETURN->v_float = bcdata->getParam();
+  RETURN->v_float = bcdata->setHighfreq(GET_NEXT_FLOAT(ARGS));
+}
+
+CK_DLL_MFUN(vocode_setBandwidth)
+{
+  // get our c++ class pointer
+  Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setBandwidth(GET_NEXT_FLOAT(ARGS));
+}
+
+CK_DLL_MFUN(vocode_setHold)
+{
+  // get our c++ class pointer
+  Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
+  // set the return value
+  RETURN->v_int = bcdata->setLowfreq(GET_NEXT_INT(ARGS));
+}
+
+CK_DLL_MFUN(vocode_setResponsetime)
+{
+  // get our c++ class pointer
+  Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
+  // set the return value
+  RETURN->v_dur = bcdata->setResponsetime(GET_NEXT_DUR(ARGS));
+}
+
+CK_DLL_MFUN(vocode_setModQ)
+{
+  // get our c++ class pointer
+  Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setModQ(GET_NEXT_FLOAT(ARGS));
+}
+
+CK_DLL_MFUN(vocode_setCarQ)
+{
+  // get our c++ class pointer
+  Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setCarQ(GET_NEXT_FLOAT(ARGS));
+}
+
+CK_DLL_MFUN(vocode_setModTranspose)
+{
+  // get our c++ class pointer
+  Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setModTranspose(GET_NEXT_FLOAT(ARGS));
+}
+
+CK_DLL_MFUN(vocode_setCarTranspose)
+{
+  // get our c++ class pointer
+  Vocode * bcdata = (Vocode *) OBJ_MEMBER_INT(SELF, vocode_data_offset);
+  // set the return value
+  RETURN->v_float = bcdata->setCarTranspose(GET_NEXT_FLOAT(ARGS));
 }

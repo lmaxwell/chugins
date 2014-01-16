@@ -1,2 +1,13 @@
-adc => Vocode voc => dac;
-<<< 0.494 => voc.param >>>;
+Vocode voc => dac;
+43 => Std.mtof => voc.low;
+79 => Std.mtof => voc.high;
+(Std.mtof(55)-Std.mtof(43))/8 => voc.width;
+3 => voc.modQ;
+3 => voc.carQ;
+SndBuf bach => voc.chan(0);
+SndBuf obama => voc.chan(1);
+"../PitchTrack/data/obama.wav" => obama.read;
+"/home/jwmatthys/Music/bach_canon.wav" => bach.read;
+0 => bach.pos;
+0 => obama.pos;
+minute => now;
