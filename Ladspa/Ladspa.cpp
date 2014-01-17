@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <limits.h>
 #include <dlfcn.h>
+#include <assert.h>
 
 #define DEFAULT_BUFSIZE 1
 
@@ -144,8 +145,9 @@ public:
 	return val;
   }
   
-  int choosePlugin ( Chuck_String *p)
+  int LadspaActivate ( Chuck_String *p)
   {
+	assert(p != NULL);
 	if (pluginLoaded)
 	  {
 		const char * pcPluginLabel = p->str.c_str();	
@@ -154,7 +156,7 @@ public:
 			psDescriptor = pfDescriptorFunction(i);
 			if (psDescriptor == NULL)
 			  {
-				printf("LADSPA error: unable to find lable \"%s\" in plugin.\n", pcPluginLabel);
+				printf("LADSPA error: unable to find label \"%s\" in plugin.\n", pcPluginLabel);
 				return 0;
 			  }
 			if (strcmp(psDescriptor->Label, pcPluginLabel) == 0)
@@ -174,6 +176,7 @@ public:
 
   int LADSPA_load ( Chuck_String * p)
   {
+	assert(p != NULL);
     if (pluginActivated)
 	  {
 		psDescriptor->cleanup(pPlugin);
@@ -612,7 +615,7 @@ CK_DLL_MFUN(ladspa_label)
   // get our c++ class pointer
   Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
   // set the return value
-  RETURN->v_int = bcdata->choosePlugin(GET_NEXT_STRING(ARGS));
+  RETURN->v_int = bcdata->LadspaActivate(GET_NEXT_STRING(ARGS));
 }
 
 // example implementation for setter
