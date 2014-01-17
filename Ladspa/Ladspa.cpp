@@ -145,12 +145,12 @@ public:
 	return val;
   }
   
-  int LadspaActivate ( Chuck_String *p)
+  int LadspaActivate ( const char * pcPluginLabel )
   {
-	assert(p != NULL);
+	assert(pcPluginLabel != NULL);
 	if (pluginLoaded)
 	  {
-		const char * pcPluginLabel = p->str.c_str();	
+		if (verbose) printf("DEBUG: received string \"%s\"\n", pcPluginLabel);
 		for (int i=0;; i++)
 		  {
 			psDescriptor = pfDescriptorFunction(i);
@@ -174,9 +174,8 @@ public:
 	return 0;
   }
 
-  int LADSPA_load ( Chuck_String * p)
+  int LADSPA_load ( const char *  pcPluginFilename )
   {
-	assert(p != NULL);
     if (pluginActivated)
 	  {
 		psDescriptor->cleanup(pPlugin);
@@ -189,7 +188,8 @@ public:
 	  }
 	pluginActivated = false;
 	pluginLoaded = false;
-    const char * pcPluginFilename = p->str.c_str();
+	assert(pcPluginFilename != NULL);
+	if (verbose) printf("DEBUG: received string \"%s\"\n", pcPluginFilename);
     if (verbose) printf("LADSPA: loading plugin %s\n", pcPluginFilename);
     pvPluginHandle = dlopen(pcPluginFilename, RTLD_NOW);
     dlerror();
@@ -606,7 +606,8 @@ CK_DLL_MFUN(ladspa_load)
   // get our c++ class pointer
   Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
   // set the return value
-  RETURN->v_int = bcdata->LADSPA_load(GET_NEXT_STRING(ARGS));
+  const char * name = GET_CK_STRING(ARGS)->str.c_str();
+  RETURN->v_int = bcdata->LADSPA_load(name);
 }
 
 // example implementation for setter
@@ -615,7 +616,8 @@ CK_DLL_MFUN(ladspa_label)
   // get our c++ class pointer
   Ladspa * bcdata = (Ladspa *) OBJ_MEMBER_INT(SELF, ladspa_data_offset);
   // set the return value
-  RETURN->v_int = bcdata->LadspaActivate(GET_NEXT_STRING(ARGS));
+  const char * name = GET_CK_STRING(ARGS)->str.c_str();
+  RETURN->v_int = bcdata->LadspaActivate(name);
 }
 
 // example implementation for setter
