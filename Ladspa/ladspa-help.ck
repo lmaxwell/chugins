@@ -33,6 +33,7 @@ plugname => plugin.load;
 //
 // list allows you to see which plugins are available and what
 // their labels are (which you need to know to activate them).
+// This method can only be called BEFORE activating.
 plugin.list();
 
 // This activates the specific plugin. (Warning: there is a

@@ -232,6 +232,11 @@ public:
 #endif
 	if (pluginLoaded)
 	  {
+		if (pluginActivated)
+		  {
+			printf ("LADSPA error: sorry, you can't list available plugins after activating.\n");
+			return 0;
+		  }
 		printf ("Plugins available under this LADSPA file:\n");
 		for (int i = 0;; i++)
 		  {
