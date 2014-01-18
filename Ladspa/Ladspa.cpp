@@ -18,6 +18,8 @@
 
 #define DEFAULT_BUFSIZE 1
 
+#define DEBUG
+
 // declaration of chugin constructor
 CK_DLL_CTOR(ladspa_ctor);
 // declaration of chugin desctructor
@@ -100,6 +102,9 @@ public:
 
   float set( float val, int param)
   {
+#ifdef DEBUG
+    printf ("DEBUG: method 'set' : param number %d, value %f\n",param, val);
+#endif
 	if (pluginActivated)
 	  {
 		if (param < kports)
@@ -140,6 +145,9 @@ public:
 
   int LADSPAverbose (int val)
   {
+#ifdef DEBUG
+    printf ("DEBUG: method 'verbose' : value %d\n", val);
+#endif
 	if (val) verbose = true;
 	else verbose = false;
 	return val;
@@ -150,8 +158,10 @@ public:
 	assert(pcPluginLabel != NULL);
 	if (pluginLoaded)
 	  {
-		if (verbose) printf("DEBUG: received string \"%s\"\n", pcPluginLabel);
-		for (int i=0;; i++)
+#ifdef DEBUG
+	    printf("DEBUG: method 'LadspaActivate' received string \"%s\"\n", pcPluginLabel);
+#endif
+	    for (int i=0;; i++)
 		  {
 			psDescriptor = pfDescriptorFunction(i);
 			if (psDescriptor == NULL)
@@ -176,6 +186,9 @@ public:
 
   int LADSPA_load ( const char *  pcPluginFilename )
   {
+#ifdef DEBUG
+	    printf("DEBUG: method 'LADSPA_load' received string \"%s\"\n", pcPluginFilename);
+#endif
     if (pluginActivated)
 	  {
 		psDescriptor->cleanup(pPlugin);
@@ -189,7 +202,9 @@ public:
 	pluginActivated = false;
 	pluginLoaded = false;
 	assert(pcPluginFilename != NULL);
-	if (verbose) printf("DEBUG: received string \"%s\"\n", pcPluginFilename);
+#ifdef DEBUG
+	printf("DEBUG: received string \"%s\"\n", pcPluginFilename);
+#endif
     if (verbose) printf("LADSPA: loading plugin %s\n", pcPluginFilename);
     pvPluginHandle = dlopen(pcPluginFilename, RTLD_NOW);
     dlerror();
@@ -212,6 +227,9 @@ public:
   // TODO: error checking  
   int LADSPA_list ()
   {
+#ifdef DEBUG
+	    printf("DEBUG: method 'Ladspa_list'\n");
+#endif
 	if (pluginLoaded)
 	  {
 		printf ("Plugins available under this LADSPA file:\n");
@@ -233,6 +251,9 @@ public:
 
 int LADSPA_info ()
   {
+#ifdef DEBUG
+	    printf("DEBUG: method 'Ladspa_info'\n");
+#endif
 	if (pluginActivated)
 	  {
 		bool bFound;
