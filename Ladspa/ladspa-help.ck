@@ -26,14 +26,16 @@ Noise n => LADSPA plugin => dac;
 0.5 => n.gain;
 // load requires either a full path or a relative path. If the
 // LADSPA file is in the same directory, you need to prepend ./
+// On OSX and Linux, plugins are usually in /usr/local/lib/ladspa
+// or /usr/lib/ladspa.
 plugname => plugin.load;
 
 // Any individual LADSPA file may have several different plugins
 // or versions of a plugin contained with it. For instance, the
-// simple filter example has two different plugins, a high-pass
-// filter and a low-pass.
+// simple filter example that comes with the LADSPA SDK has two
+// different plugins, a high-pass filter and a low-pass.
 //
-// list allows you to see which plugins are available and what
+// list() allows you to see which plugins are available and what
 // their labels are (which you need to know to activate them).
 // This method can only be called BEFORE activating.
 plugin.list();
