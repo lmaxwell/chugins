@@ -161,6 +161,12 @@ public:
 #ifdef DEBUG
 	    printf("DEBUG: method 'LadspaActivate' received string \"%s\"\n", pcPluginLabel);
 #endif
+	    if (pluginActivated)
+	      {
+		psDescriptor->cleanup(pPlugin);
+		if (verbose) printf("LADSPA: deactivating current plugin...\n");
+		pluginActivated = false;
+	      }
 	    for (int i=0;; i++)
 		  {
 			psDescriptor = pfDescriptorFunction(i);
@@ -228,30 +234,26 @@ public:
   int LADSPA_list ()
   {
 #ifdef DEBUG
-	    printf("DEBUG: method 'Ladspa_list'\n");
+    printf("DEBUG: method 'Ladspa_list'\n");
 #endif
-	if (pluginLoaded)
-	  {
-		if (pluginActivated)
-		  {
-			printf ("LADSPA error: sorry, you can't list available plugins after activating.\n");
-			return 0;
-		  }
-		printf ("Plugins available under this LADSPA file:\n");
-		for (int i = 0;; i++)
-		  {
-			psDescriptor = pfDescriptorFunction(i);
-			if (!psDescriptor)
-			  break;
-			putchar('\n');
-			printf("Plugin Label: \"%s\"\n", psDescriptor->Label);
-			printf("Plugin Name: \"%s\"\n", psDescriptor->Name);
-		  }
-		printf("--------------------------------------------------\n");
-		return 1;
-	  }
-	else
-	  printf ("LADSPA error: no plugin loaded yet!\n");
+    if (!pluginLoaded)
+      {
+	printf ("LADSPA error: no plugin loaded yet\n");
+	return 0;
+      }
+    const LADSPA_Descriptor * testDescriptor;
+    printf ("Plugins available under this LADSPA file:\n");
+    for (int i = 0;; i++)
+      {
+	testDescriptor = pfDescriptorFunction(i);
+	if (!testDescriptor)
+	  break;
+	putchar('\n');
+	printf("Plugin Label: \"%s\"\n", testDescriptor->Label);
+	printf("Plugin Name: \"%s\"\n", testDescriptor->Name);
+      }
+    printf("--------------------------------------------------\n");
+    return 1;
   }
 
 int LADSPA_info ()
